@@ -42,13 +42,20 @@ type VolumeInfo struct {
 
 // NewClient creates a new Docker client
 func NewClient() (*Client, error) {
+	ctx := context.Background()
+
 	// Try to create client from environment variables first
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err == nil {
-		return &Client{
-			cli: cli,
-			ctx: context.Background(),
-		}, nil
+		// Test if the connection actually works
+		if _, pingErr := cli.Ping(ctx); pingErr == nil {
+			return &Client{
+				cli: cli,
+				ctx: ctx,
+			}, nil
+		}
+		// Connection failed, close and try context
+		cli.Close()
 	}
 
 	// If FromEnv fails, try to get Docker host from current context
@@ -59,14 +66,18 @@ func NewClient() (*Client, error) {
 			client.WithAPIVersionNegotiation(),
 		)
 		if err == nil {
-			return &Client{
-				cli: cli,
-				ctx: context.Background(),
-			}, nil
+			// Test if the connection works
+			if _, pingErr := cli.Ping(ctx); pingErr == nil {
+				return &Client{
+					cli: cli,
+					ctx: ctx,
+				}, nil
+			}
+			cli.Close()
 		}
 	}
 
-	return nil, fmt.Errorf("failed to connect to Docker daemon: %w", err)
+	return nil, fmt.Errorf("failed to connect to Docker daemon. Please ensure Docker is running")
 }
 
 // getDockerHostFromContext uses docker CLI to get the current context endpoint
