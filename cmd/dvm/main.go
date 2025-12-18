@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/docker-volume-manager/dvm/internal/commands"
-	"github.com/docker-volume-manager/dvm/internal/config"
+	"github.com/koyashimano/docker-volume-manager/internal/commands"
+	"github.com/koyashimano/docker-volume-manager/internal/config"
 )
 
 const version = "1.0.0"
@@ -410,5 +410,5 @@ Examples:
   dvm swap db --empty --restart
   dvm clean --unused --dry-run
 
-For more information: https://github.com/docker-volume-manager/dvm`)
+For more information: https://github.com/koyashimano/docker-volume-manager`)
 }

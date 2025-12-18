@@ -1,4 +1,4 @@
-module github.com/docker-volume-manager/dvm
+module github.com/koyashimano/docker-volume-manager
 
 go 1.24.7
 

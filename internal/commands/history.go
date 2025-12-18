@@ -5,7 +5,7 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"github.com/docker-volume-manager/dvm/internal/database"
+	"github.com/koyashimano/docker-volume-manager/internal/database"
 )
 
 // HistoryOptions contains options for history command

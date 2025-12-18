@@ -1,10 +1,10 @@
 package commands
 
 import (
-	"github.com/docker-volume-manager/dvm/internal/compose"
-	"github.com/docker-volume-manager/dvm/internal/config"
-	"github.com/docker-volume-manager/dvm/internal/database"
-	"github.com/docker-volume-manager/dvm/internal/docker"
+	"github.com/koyashimano/docker-volume-manager/internal/compose"
+	"github.com/koyashimano/docker-volume-manager/internal/config"
+	"github.com/koyashimano/docker-volume-manager/internal/database"
+	"github.com/koyashimano/docker-volume-manager/internal/docker"
 )
 
 // Context holds the application context

@@ -1,204 +1,211 @@
 # Docker Volume Manager (dvm)
 
-Docker ボリュームのライフサイクル管理を簡単にする Go 製 CLI ツール。
+A powerful CLI tool for managing Docker volume lifecycles, built with Go.
 
-## 概要
+## Overview
 
-`dvm` は Docker Compose 環境との統合を前提とし、バックアップ、リストア、アーカイブ、スワップ、クリーンアップなどの操作を簡単に実行できる CLI ツールです。
+`dvm` is designed to integrate seamlessly with Docker Compose environments, providing easy operations for backup, restore, archive, swap, and cleanup of Docker volumes.
 
-## 主な機能
+## Key Features
 
-- **Docker Compose 連携**: Compose ファイルから自動でボリュームを検出
-- **バックアップ/リストア**: ボリュームデータの簡単なバックアップとリストア
-- **アーカイブ**: 不要なボリュームをアーカイブして削除
-- **スワップ**: ボリュームの内容を簡単に入れ替え（テストデータとの切り替えなど）
-- **クリーンアップ**: 未使用ボリュームの自動検出と削除
-- **履歴管理**: バックアップ履歴の追跡
-- **メタデータ追跡**: 最終アクセス日時などをトラッキング
+- **Docker Compose Integration**: Automatic volume detection from Compose files
+- **Backup/Restore**: Simple volume data backup and restoration
+- **Archive**: Archive and remove unused volumes
+- **Swap**: Easily swap volume contents (e.g., switching between test and production data)
+- **Cleanup**: Automatic detection and removal of unused volumes
+- **History Tracking**: Track backup history
+- **Metadata Tracking**: Monitor last access times and usage patterns
 
-## インストール
+## Installation
 
-### ビルド
+### Build from Source
 
 ```bash
-# リポジトリをクローン
-git clone https://github.com/docker-volume-manager/dvm.git
-cd dvm
+# Clone the repository
+git clone https://github.com/koyashimano/docker-volume-manager.git
+cd docker-volume-manager
 
-# ビルド
+# Build
 go build -o dvm ./cmd/dvm
 
-# システムにインストール（オプション）
+# Install to system (optional)
 sudo mv dvm /usr/local/bin/
 ```
 
-### 依存関係
-
-- Go 1.21 以上
-- Docker がインストールされていること
-
-## クイックスタート
+Alternatively, use the Makefile:
 
 ```bash
-# プロジェクトディレクトリに移動（compose.yaml があるディレクトリ）
+make build          # Build binary
+make install        # Install to /usr/local/bin
+```
+
+### Requirements
+
+- Go 1.21 or higher
+- Docker installed and running
+
+## Quick Start
+
+```bash
+# Navigate to your project directory (containing compose.yaml)
 cd ~/projects/myapp
 
-# ボリューム一覧を表示
+# List volumes
 dvm list
 
-# 全ボリュームをバックアップ
+# Backup all volumes
 dvm backup
 
-# 特定のサービスのボリュームをバックアップ
+# Backup specific service volume
 dvm backup db
 
-# 最新のバックアップからリストア
+# Restore from latest backup
 dvm restore db
 
-# バックアップを選択してリストア
+# Restore with interactive selection
 dvm restore db --select
 
-# 未使用ボリュームをクリーンアップ（dry-run）
+# Cleanup unused volumes (dry-run)
 dvm clean --unused --dry-run
 
-# 実際にクリーンアップ
+# Actually cleanup
 dvm clean --unused
 ```
 
-## 使い方
+## Usage
 
-### グローバルオプション
+### Global Options
 
 ```
--f, --file <path>      Compose ファイルパス
--p, --project <name>   プロジェクト名を上書き
---no-compose           Compose 連携を無効化
--v, --verbose          詳細ログ出力
--q, --quiet            出力を最小限に
---config <path>        設定ファイルパス指定
---version              バージョン表示
--h, --help             ヘルプ表示
+-f, --file <path>      Path to Compose file
+-p, --project <name>   Override project name
+--no-compose           Disable Compose integration
+-v, --verbose          Verbose output
+-q, --quiet            Minimal output
+--config <path>        Specify config file path
+--version              Show version
+-h, --help             Show help
 ```
 
-### コマンド
+### Commands
 
-#### `dvm list` - ボリューム一覧表示
+#### `dvm list` - List volumes
 
 ```bash
-dvm list                    # 現在のプロジェクトのボリューム
-dvm list --all             # すべてのボリューム
-dvm list --unused          # 未使用ボリュームのみ
-dvm list --stale 30        # 30日以上アクセスなし
-dvm list --format json     # JSON形式で出力
+dvm list                    # Current project volumes
+dvm list --all             # All volumes
+dvm list --unused          # Only unused volumes
+dvm list --stale 30        # Not accessed for 30+ days
+dvm list --format json     # Output as JSON
 ```
 
-#### `dvm backup` - バックアップ
+#### `dvm backup` - Create backups
 
 ```bash
-dvm backup                  # 全ボリュームをバックアップ
-dvm backup db              # db サービスのボリュームをバックアップ
-dvm backup db redis        # 複数指定
-dvm backup -o /backup      # 出力先を指定
-dvm backup --tag daily     # タグを付ける
-dvm backup --stop          # コンテナを停止してバックアップ
+dvm backup                  # Backup all volumes
+dvm backup db              # Backup db service volume
+dvm backup db redis        # Backup multiple services
+dvm backup -o /backup      # Specify output directory
+dvm backup --tag daily     # Tag the backup
+dvm backup --stop          # Stop containers before backup
 ```
 
-#### `dvm restore` - リストア
+#### `dvm restore` - Restore from backup
 
 ```bash
-dvm restore db             # 最新のバックアップからリストア
-dvm restore db --select    # 対話的にバックアップを選択
-dvm restore db --list      # 利用可能なバックアップ一覧
-dvm restore --restart      # リストア後にコンテナ再起動
-dvm restore /path/to/backup.tar.gz  # 特定のファイルからリストア
+dvm restore db             # Restore from latest backup
+dvm restore db --select    # Interactive backup selection
+dvm restore db --list      # List available backups
+dvm restore --restart      # Restart containers after restore
+dvm restore /path/to/backup.tar.gz  # Restore from specific file
 ```
 
-#### `dvm archive` - アーカイブして削除
+#### `dvm archive` - Archive and delete
 
 ```bash
-dvm archive                # プロジェクト全体をアーカイブ
-dvm archive db             # 特定のサービスのみ
-dvm archive --verify       # 整合性検証後に削除
+dvm archive                # Archive entire project
+dvm archive db             # Archive specific service only
+dvm archive --verify       # Verify integrity before deletion
 ```
 
-#### `dvm swap` - ボリューム切り替え
+#### `dvm swap` - Swap volumes
 
 ```bash
-dvm swap db --empty --restart           # 空のボリュームに切り替え
-dvm swap db test_data.tar.gz --restart  # テストデータに切り替え
-dvm restore db --restart                # 元に戻す
+dvm swap db --empty --restart           # Swap to empty volume
+dvm swap db test_data.tar.gz --restart  # Swap to test data
+dvm restore db --restart                # Restore original
 ```
 
-#### `dvm clean` - クリーンアップ
+#### `dvm clean` - Cleanup volumes
 
 ```bash
-dvm clean --unused --dry-run    # 削除対象を確認
-dvm clean --unused              # 未使用ボリュームを削除
-dvm clean --stale 60            # 60日以上未使用を削除
-dvm clean --unused --archive    # アーカイブしてから削除
+dvm clean --unused --dry-run    # Preview what will be deleted
+dvm clean --unused              # Delete unused volumes
+dvm clean --stale 60            # Delete volumes unused for 60+ days
+dvm clean --unused --archive    # Archive before deleting
 ```
 
-#### `dvm history` - バックアップ履歴
+#### `dvm history` - Show backup history
 
 ```bash
-dvm history                # 現在のプロジェクトの履歴
-dvm history db             # 特定のサービスの履歴
-dvm history --all          # 全プロジェクトの履歴
-dvm history -n 20          # 20件表示
+dvm history                # Current project history
+dvm history db             # Specific service history
+dvm history --all          # All projects
+dvm history -n 20          # Show 20 entries
 ```
 
-#### `dvm inspect` - 詳細情報
+#### `dvm inspect` - Show detailed information
 
 ```bash
-dvm inspect db             # ボリュームの詳細情報
-dvm inspect db --format json  # JSON形式
+dvm inspect db             # Show volume details
+dvm inspect db --format json  # Output as JSON
 ```
 
-#### `dvm clone` - ボリューム複製
+#### `dvm clone` - Clone volumes
 
 ```bash
-dvm clone db db_test       # テスト用に複製
+dvm clone db db_test       # Clone for testing
 ```
 
-## 設定ファイル
+## Configuration
 
-`~/.dvm/config.yaml` で設定をカスタマイズできます。
+Customize settings in `~/.dvm/config.yaml`:
 
 ```yaml
-# デフォルト設定
+# Default settings
 defaults:
   compress_format: tar.gz    # tar.gz | tar.zst
-  keep_generations: 5        # バックアップ保持世代
-  stop_before_backup: false  # バックアップ前にコンテナ停止
+  keep_generations: 5        # Number of backup generations to keep
+  stop_before_backup: false  # Stop containers before backup
 
-# パス設定
+# Path settings
 paths:
   backups: ~/.dvm/backups
   archives: ~/.dvm/archives
 
-# プロジェクト別設定
+# Project-specific settings
 projects:
   myproject:
     keep_generations: 10
 ```
 
-## ディレクトリ構造
+## Directory Structure
 
 ```
 ~/.dvm/
-├── config.yaml              # グローバル設定
-├── backups/                 # バックアップ
+├── config.yaml              # Global configuration
+├── backups/                 # Backups
 │   ├── myproject/
 │   │   ├── db_2024-12-18_143022.tar.gz
 │   │   └── redis_2024-12-18_143022.tar.gz
 │   └── other-project/
-├── archives/                # アーカイブ
-└── meta.db                  # メタデータ（SQLite）
+├── archives/                # Archived volumes
+└── meta.db                  # Metadata (SQLite)
 ```
 
-## 典型的なワークフロー
+## Common Workflows
 
-### 日常のバックアップ
+### Daily Backups
 
 ```bash
 cd ~/projects/myapp
@@ -206,58 +213,58 @@ dvm backup
 dvm history
 ```
 
-### 開発環境リセット
+### Reset Development Environment
 
 ```bash
 dvm swap db --empty --restart
-# 開発作業...
+# ... development work ...
 dvm restore db --restart
 ```
 
-### 本番データでテスト
+### Test with Production Data
 
 ```bash
 dvm swap db ./prod_dump.tar.gz --restart
-# テスト...
+# ... testing ...
 dvm restore db --restart
 ```
 
-### プロジェクト終了時
+### Project Cleanup
 
 ```bash
 cd ~/projects/finished-project
 dvm archive --verify
 ```
 
-### 定期クリーンアップ
+### Periodic Cleanup
 
 ```bash
 dvm clean --stale 90 --dry-run
 dvm clean --stale 90 --archive
 ```
 
-## トラブルシューティング
+## Troubleshooting
 
-### Docker との接続エラー
+### Docker Connection Error
 
-Docker が起動しているか確認してください:
+Ensure Docker is running:
 
 ```bash
 docker ps
 ```
 
-### 権限エラー
+### Permission Error
 
-Docker コマンドを実行する権限があるか確認してください:
+Verify you have permission to run Docker commands:
 
 ```bash
 docker volume ls
 ```
 
-## ライセンス
+## License
 
 MIT
 
-## 仕様
+## Specification
 
-詳細な仕様については [spec.md](spec.md) を参照してください。
+For detailed specification, see [spec.md](spec.md).

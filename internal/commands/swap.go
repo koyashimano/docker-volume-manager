@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/docker-volume-manager/dvm/internal/database"
+	"github.com/koyashimano/docker-volume-manager/internal/database"
 )
 
 // SwapOptions contains options for swap command

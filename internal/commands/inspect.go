@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/docker/docker/api/types/volume"
-	"github.com/docker-volume-manager/dvm/internal/database"
+	"github.com/koyashimano/docker-volume-manager/internal/database"
 )
 
 // InspectOptions contains options for inspect command
