@@ -115,12 +115,12 @@ func (c *Context) cleanVolume(volumeName, archiveDir string) error {
 			fmt.Printf("Archiving %s...\n", volumeName)
 		}
 
+		// Get service name for metadata
 		serviceName := c.GetServiceName(volumeName)
-		if serviceName == "" {
-			serviceName = volumeName
-		}
 
-		filename := GenerateBackupFilename(serviceName, c.Config.Defaults.CompressFormat)
+		// Generate filename using volume name (not service name)
+		// This ensures uniqueness even when multiple services share the same volume
+		filename := GenerateBackupFilename(volumeName, c.Config.Defaults.CompressFormat)
 		archivePath := filepath.Join(archiveDir, filename)
 
 		if err := c.Docker.BackupVolume(volumeName, archivePath, true); err != nil {

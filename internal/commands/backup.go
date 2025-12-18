@@ -77,11 +77,8 @@ func (c *Context) backupVolume(volumeName, outputDir string, opts BackupOptions)
 		return ErrVolumeNotFound
 	}
 
-	// Get service name
+	// Get service name for metadata
 	serviceName := c.GetServiceName(volumeName)
-	if serviceName == "" {
-		serviceName = volumeName
-	}
 
 	// Stop containers if requested
 	if opts.Stop {
@@ -93,13 +90,14 @@ func (c *Context) backupVolume(volumeName, outputDir string, opts BackupOptions)
 		}
 	}
 
-	// Generate filename
+	// Generate filename using volume name (not service name)
+	// This ensures uniqueness even when multiple services share the same volume
 	format := opts.Format
 	if format == "" {
 		format = c.Config.Defaults.CompressFormat
 	}
 
-	filename := GenerateBackupFilename(serviceName, format)
+	filename := GenerateBackupFilename(volumeName, format)
 	outputPath := filepath.Join(outputDir, filename)
 
 	if !c.Quiet {

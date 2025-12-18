@@ -30,11 +30,8 @@ func (c *Context) Swap(opts SwapOptions) error {
 		return err
 	}
 
-	// Get service name
+	// Get service name for metadata
 	serviceName := c.GetServiceName(volumeName)
-	if serviceName == "" {
-		serviceName = opts.Service
-	}
 
 	// Check if volume exists
 	if !c.Docker.VolumeExists(volumeName) {
@@ -49,7 +46,9 @@ func (c *Context) Swap(opts SwapOptions) error {
 			return fmt.Errorf("failed to create backup directory: %w", err)
 		}
 
-		filename := GenerateBackupFilename(serviceName+"_swap_backup", c.Config.Defaults.CompressFormat)
+		// Generate filename using volume name (not service name)
+		// This ensures uniqueness even when multiple services share the same volume
+		filename := GenerateBackupFilename(volumeName+"_swap_backup", c.Config.Defaults.CompressFormat)
 		backupPath = filepath.Join(backupDir, filename)
 
 		if !c.Quiet {
