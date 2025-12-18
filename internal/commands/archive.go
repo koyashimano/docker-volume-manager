@@ -98,14 +98,12 @@ func (c *Context) archiveVolume(volumeName, outputDir string, opts ArchiveOption
 		fmt.Printf("Warning: volume %s is in use, but proceeding due to --force option\n", volumeName)
 	}
 
-	// Get service name
+	// Get service name for metadata
 	serviceName := c.GetServiceName(volumeName)
-	if serviceName == "" {
-		serviceName = volumeName
-	}
 
-	// Generate filename
-	filename := GenerateBackupFilename(serviceName, c.Config.Defaults.CompressFormat)
+	// Generate filename using volume name (not service name)
+	// This ensures uniqueness even when multiple services share the same volume
+	filename := GenerateBackupFilename(volumeName, c.Config.Defaults.CompressFormat)
 	archivePath := filepath.Join(outputDir, filename)
 
 	if !c.Quiet {
