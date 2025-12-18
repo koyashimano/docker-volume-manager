@@ -1,0 +1,187 @@
+package compose
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
+
+// ComposeFile represents a Docker Compose file
+type ComposeFile struct {
+	Name     string                 `yaml:"name,omitempty"`
+	Services map[string]Service     `yaml:"services"`
+	Volumes  map[string]interface{} `yaml:"volumes,omitempty"`
+	path     string
+}
+
+// Service represents a service in compose file
+type Service struct {
+	Image   string   `yaml:"image,omitempty"`
+	Volumes []string `yaml:"volumes,omitempty"`
+}
+
+// VolumeMapping represents a parsed volume mapping
+type VolumeMapping struct {
+	VolumeName string
+	MountPath  string
+	Service    string
+}
+
+// FindComposeFile searches for a compose file in the given directory
+func FindComposeFile(dir string) (string, error) {
+	if dir == "" {
+		dir = "."
+	}
+
+	candidates := []string{
+		"compose.yaml",
+		"compose.yml",
+		"docker-compose.yaml",
+		"docker-compose.yml",
+	}
+
+	for _, name := range candidates {
+		path := filepath.Join(dir, name)
+		if _, err := os.Stat(path); err == nil {
+			return path, nil
+		}
+	}
+
+	return "", fmt.Errorf("compose file not found in %s", dir)
+}
+
+// LoadComposeFile loads a Docker Compose file
+func LoadComposeFile(path string) (*ComposeFile, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var cf ComposeFile
+	if err := yaml.Unmarshal(data, &cf); err != nil {
+		return nil, err
+	}
+
+	cf.path = path
+	return &cf, nil
+}
+
+// GetProjectName determines the project name based on priority
+func (cf *ComposeFile) GetProjectName(override string) string {
+	// 1. Command line override
+	if override != "" {
+		return override
+	}
+
+	// 2. name field in compose file
+	if cf.Name != "" {
+		return cf.Name
+	}
+
+	// 3. COMPOSE_PROJECT_NAME env var
+	if env := os.Getenv("COMPOSE_PROJECT_NAME"); env != "" {
+		return env
+	}
+
+	// 4. Directory name
+	dir := filepath.Dir(cf.path)
+	return filepath.Base(dir)
+}
+
+// GetVolumeMapping returns volume mapping for a service
+func (cf *ComposeFile) GetVolumeMapping(serviceName string) ([]VolumeMapping, error) {
+	service, ok := cf.Services[serviceName]
+	if !ok {
+		return nil, fmt.Errorf("service %s not found", serviceName)
+	}
+
+	var mappings []VolumeMapping
+	for _, vol := range service.Volumes {
+		parts := strings.Split(vol, ":")
+		if len(parts) < 2 {
+			continue
+		}
+
+		// Only named volumes (not bind mounts)
+		if !strings.HasPrefix(parts[0], "/") && !strings.HasPrefix(parts[0], ".") {
+			mappings = append(mappings, VolumeMapping{
+				VolumeName: parts[0],
+				MountPath:  parts[1],
+				Service:    serviceName,
+			})
+		}
+	}
+
+	return mappings, nil
+}
+
+// GetAllVolumeMappings returns all volume mappings in the compose file
+func (cf *ComposeFile) GetAllVolumeMappings() []VolumeMapping {
+	var mappings []VolumeMapping
+	for serviceName := range cf.Services {
+		if m, err := cf.GetVolumeMapping(serviceName); err == nil {
+			mappings = append(mappings, m...)
+		}
+	}
+	return mappings
+}
+
+// GetFullVolumeName returns the full Docker volume name
+func (cf *ComposeFile) GetFullVolumeName(serviceName, projectName string) (string, error) {
+	mappings, err := cf.GetVolumeMapping(serviceName)
+	if err != nil {
+		return "", err
+	}
+
+	if len(mappings) == 0 {
+		return "", fmt.Errorf("no named volumes found for service %s", serviceName)
+	}
+
+	// If multiple volumes, return the first one (common case: one volume per service)
+	return fmt.Sprintf("%s_%s", projectName, mappings[0].VolumeName), nil
+}
+
+// GetAllFullVolumeNames returns all full volume names for the project
+func (cf *ComposeFile) GetAllFullVolumeNames(projectName string) []string {
+	mappings := cf.GetAllVolumeMappings()
+	var names []string
+	seen := make(map[string]bool)
+
+	for _, m := range mappings {
+		fullName := fmt.Sprintf("%s_%s", projectName, m.VolumeName)
+		if !seen[fullName] {
+			names = append(names, fullName)
+			seen[fullName] = true
+		}
+	}
+
+	return names
+}
+
+// GetServiceByVolumeName finds the service using a volume
+func (cf *ComposeFile) GetServiceByVolumeName(volumeName, projectName string) (string, error) {
+	// Strip project prefix if present
+	shortName := volumeName
+	prefix := projectName + "_"
+	if strings.HasPrefix(volumeName, prefix) {
+		shortName = strings.TrimPrefix(volumeName, prefix)
+	}
+
+	for serviceName := range cf.Services {
+		mappings, err := cf.GetVolumeMapping(serviceName)
+		if err != nil {
+			continue
+		}
+
+		for _, m := range mappings {
+			if m.VolumeName == shortName {
+				return serviceName, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("no service found using volume %s", volumeName)
+}
