@@ -2,10 +2,10 @@ package docker
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -50,7 +50,7 @@ func NewClient() (*Client, error) {
 		}, nil
 	}
 
-	// If FromEnv fails, try to read Docker context configuration
+	// If FromEnv fails, try to get Docker host from current context
 	dockerHost := getDockerHostFromContext()
 	if dockerHost != "" {
 		cli, err = client.NewClientWithOpts(
@@ -68,93 +68,18 @@ func NewClient() (*Client, error) {
 	return nil, fmt.Errorf("failed to connect to Docker daemon: %w", err)
 }
 
-// getDockerHostFromContext reads the current Docker context and returns the endpoint
+// getDockerHostFromContext uses docker CLI to get the current context endpoint
 func getDockerHostFromContext() string {
-	home, err := os.UserHomeDir()
+	// Try to use docker context inspect to get the endpoint
+	cmd := exec.Command("docker", "context", "inspect", "-f", "{{.Endpoints.docker.Host}}")
+	output, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
 
-	// Read Docker config to get current context
-	configPath := filepath.Join(home, ".docker", "config.json")
-	configData, err := os.ReadFile(configPath)
-	if err != nil {
-		return ""
-	}
-
-	var config struct {
-		CurrentContext string `json:"currentContext"`
-	}
-	if err := json.Unmarshal(configData, &config); err != nil {
-		return ""
-	}
-
-	// If no context is set, return empty
-	if config.CurrentContext == "" {
-		return ""
-	}
-
-	// Read the context metadata
-	contextPath := filepath.Join(home, ".docker", "contexts", "meta", hashContextName(config.CurrentContext), "meta.json")
-	contextData, err := os.ReadFile(contextPath)
-	if err != nil {
-		return ""
-	}
-
-	var contextMeta struct {
-		Endpoints map[string]struct {
-			Host string `json:"Host"`
-		} `json:"Endpoints"`
-	}
-	if err := json.Unmarshal(contextData, &contextMeta); err != nil {
-		return ""
-	}
-
-	// Get docker endpoint
-	if ep, ok := contextMeta.Endpoints["docker"]; ok {
-		return ep.Host
-	}
-
-	return ""
-}
-
-// hashContextName creates a simple hash directory name for a context
-// Docker uses SHA256 but we'll just try the common pattern first
-func hashContextName(name string) string {
-	// Try common hash patterns - Docker stores contexts in hashed directories
-	// We'll need to search for the context
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-
-	metaDir := filepath.Join(home, ".docker", "contexts", "meta")
-	entries, err := os.ReadDir(metaDir)
-	if err != nil {
-		return ""
-	}
-
-	// Search for the context by reading meta.json files
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		metaFile := filepath.Join(metaDir, entry.Name(), "meta.json")
-		data, err := os.ReadFile(metaFile)
-		if err != nil {
-			continue
-		}
-
-		var meta struct {
-			Name string `json:"Name"`
-		}
-		if err := json.Unmarshal(data, &meta); err != nil {
-			continue
-		}
-
-		if meta.Name == name {
-			return entry.Name()
-		}
+	host := strings.TrimSpace(string(output))
+	if host != "" && host != "<no value>" {
+		return host
 	}
 
 	return ""
