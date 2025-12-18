@@ -88,6 +88,15 @@ func (cf *ComposeFile) GetProjectName(override string) string {
 
 	// 4. Directory name
 	dir := filepath.Dir(cf.path)
+
+	// If the compose file is in the current directory (dir is "."),
+	// use the actual current working directory name
+	if dir == "." {
+		if cwd, err := os.Getwd(); err == nil {
+			return filepath.Base(cwd)
+		}
+	}
+
 	return filepath.Base(dir)
 }
 
