@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -14,6 +15,11 @@ import (
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
+)
+
+const (
+	// DefaultContainerTimeout is the default timeout for container operations
+	DefaultContainerTimeout = 10
 )
 
 // Client wraps Docker client
@@ -131,10 +137,10 @@ func (c *Client) RemoveVolume(name string, force bool) error {
 
 // BackupVolume backs up a volume to a tar.gz file
 func (c *Client) BackupVolume(volumeName, outputPath string, compress bool) error {
-	// Determine compression flag
-	compressFlag := ""
+	// Determine tar compression option
+	tarCompressionOption := ""
 	if compress {
-		compressFlag = "z"
+		tarCompressionOption = "z"
 	}
 
 	// Create output directory if it doesn't exist
@@ -146,7 +152,7 @@ func (c *Client) BackupVolume(volumeName, outputPath string, compress bool) erro
 	// Run a temporary container to create the backup
 	resp, err := c.cli.ContainerCreate(c.ctx, &container.Config{
 		Image: "alpine:latest",
-		Cmd:   []string{"tar", "c" + compressFlag + "f", "/backup/data.tar.gz", "-C", "/source", "."},
+		Cmd:   []string{"tar", "c" + tarCompressionOption + "f", "/backup/data.tar.gz", "-C", "/source", "."},
 	}, &container.HostConfig{
 		Mounts: []mount.Mount{
 			{
@@ -166,6 +172,7 @@ func (c *Client) BackupVolume(volumeName, outputPath string, compress bool) erro
 		return err
 	}
 
+	// Ensure container cleanup
 	defer c.cli.ContainerRemove(c.ctx, resp.ID, container.RemoveOptions{Force: true})
 
 	// Start the container
@@ -183,15 +190,20 @@ func (c *Client) BackupVolume(volumeName, outputPath string, compress bool) erro
 	case status := <-statusCh:
 		if status.StatusCode != 0 {
 			// Get logs for debugging
-			logs, _ := c.cli.ContainerLogs(c.ctx, resp.ID, container.LogsOptions{
+			logs, err := c.cli.ContainerLogs(c.ctx, resp.ID, container.LogsOptions{
 				ShowStdout: true,
 				ShowStderr: true,
 			})
-			if logs != nil {
-				logData, _ := io.ReadAll(logs)
-				return fmt.Errorf("backup failed with status %d: %s", status.StatusCode, string(logData))
+			if err != nil {
+				return fmt.Errorf("backup failed with status %d and could not retrieve logs: %w", status.StatusCode, err)
 			}
-			return fmt.Errorf("backup failed with status code %d", status.StatusCode)
+			defer logs.Close()
+
+			logData, err := io.ReadAll(logs)
+			if err != nil {
+				return fmt.Errorf("backup failed with status %d and error reading logs: %w", status.StatusCode, err)
+			}
+			return fmt.Errorf("backup failed with status %d: %s", status.StatusCode, string(logData))
 		}
 	}
 
@@ -204,7 +216,7 @@ func (c *Client) BackupVolume(volumeName, outputPath string, compress bool) erro
 	return nil
 }
 
-// RestoreVolume restores a volume from a tar.gz file
+// RestoreVolume restores a volume from a backup file
 func (c *Client) RestoreVolume(volumeName, backupPath string) error {
 	// Check if backup file exists
 	if _, err := os.Stat(backupPath); os.IsNotExist(err) {
@@ -213,6 +225,15 @@ func (c *Client) RestoreVolume(volumeName, backupPath string) error {
 
 	backupDir := filepath.Dir(backupPath)
 	backupFile := filepath.Base(backupPath)
+
+	// Detect compression format from file extension
+	tarFlags := "xf"
+	if strings.HasSuffix(backupPath, ".tar.gz") || strings.HasSuffix(backupPath, ".tgz") {
+		tarFlags = "xzf"
+	} else if strings.HasSuffix(backupPath, ".tar.zst") {
+		// zstd compression would require zstd tool, use auto-detection
+		tarFlags = "xf"
+	}
 
 	// Create volume if it doesn't exist
 	if !c.VolumeExists(volumeName) {
@@ -224,7 +245,7 @@ func (c *Client) RestoreVolume(volumeName, backupPath string) error {
 	// Run a temporary container to restore the backup
 	resp, err := c.cli.ContainerCreate(c.ctx, &container.Config{
 		Image: "alpine:latest",
-		Cmd:   []string{"tar", "xzf", "/backup/" + backupFile, "-C", "/target"},
+		Cmd:   []string{"tar", tarFlags, "/backup/" + backupFile, "-C", "/target"},
 	}, &container.HostConfig{
 		Mounts: []mount.Mount{
 			{
@@ -244,6 +265,7 @@ func (c *Client) RestoreVolume(volumeName, backupPath string) error {
 		return err
 	}
 
+	// Ensure container cleanup
 	defer c.cli.ContainerRemove(c.ctx, resp.ID, container.RemoveOptions{Force: true})
 
 	// Start the container
@@ -260,15 +282,20 @@ func (c *Client) RestoreVolume(volumeName, backupPath string) error {
 		}
 	case status := <-statusCh:
 		if status.StatusCode != 0 {
-			logs, _ := c.cli.ContainerLogs(c.ctx, resp.ID, container.LogsOptions{
+			logs, err := c.cli.ContainerLogs(c.ctx, resp.ID, container.LogsOptions{
 				ShowStdout: true,
 				ShowStderr: true,
 			})
-			if logs != nil {
-				logData, _ := io.ReadAll(logs)
-				return fmt.Errorf("restore failed with status %d: %s", status.StatusCode, string(logData))
+			if err != nil {
+				return fmt.Errorf("restore failed with status %d and could not retrieve logs: %w", status.StatusCode, err)
 			}
-			return fmt.Errorf("restore failed with status code %d", status.StatusCode)
+			defer logs.Close()
+
+			logData, err := io.ReadAll(logs)
+			if err != nil {
+				return fmt.Errorf("restore failed with status %d and could not read logs: %w", status.StatusCode, err)
+			}
+			return fmt.Errorf("restore failed with status %d: %s", status.StatusCode, string(logData))
 		}
 	}
 
@@ -307,6 +334,7 @@ func (c *Client) CopyVolume(sourceVolume, targetVolume string) error {
 		return err
 	}
 
+	// Ensure container cleanup
 	defer c.cli.ContainerRemove(c.ctx, resp.ID, container.RemoveOptions{Force: true})
 
 	if err := c.cli.ContainerStart(c.ctx, resp.ID, container.StartOptions{}); err != nil {
@@ -346,10 +374,10 @@ func (c *Client) StopContainersUsingVolume(volumeName string) error {
 		return err
 	}
 
+	timeout := DefaultContainerTimeout
 	for _, containerName := range containers {
 		// Remove leading slash from container name
-		containerName = containerName[1:]
-		timeout := 10
+		containerName = strings.TrimPrefix(containerName, "/")
 		if err := c.cli.ContainerStop(c.ctx, containerName, container.StopOptions{Timeout: &timeout}); err != nil {
 			return err
 		}
@@ -365,9 +393,9 @@ func (c *Client) RestartContainersUsingVolume(volumeName string) error {
 		return err
 	}
 
+	timeout := DefaultContainerTimeout
 	for _, containerName := range containers {
-		containerName = containerName[1:]
-		timeout := 10
+		containerName = strings.TrimPrefix(containerName, "/")
 		if err := c.cli.ContainerRestart(c.ctx, containerName, container.StopOptions{Timeout: &timeout}); err != nil {
 			return err
 		}

@@ -112,13 +112,17 @@ func (c *Context) archiveVolume(volumeName, outputDir string, opts ArchiveOption
 		return fmt.Errorf("archive backup failed: %w", err)
 	}
 
+	// Calculate checksum (reuse if verify was requested)
+	var checksum string
+	var err error
+
 	// Verify if requested
 	if opts.Verify {
 		if !c.Quiet {
 			fmt.Printf("Verifying archive integrity...\n")
 		}
 
-		checksum, err := CalculateChecksum(archivePath)
+		checksum, err = CalculateChecksum(archivePath)
 		if err != nil {
 			return fmt.Errorf("checksum calculation failed: %w", err)
 		}
@@ -126,13 +130,15 @@ func (c *Context) archiveVolume(volumeName, outputDir string, opts ArchiveOption
 		if c.Verbose {
 			fmt.Printf("Checksum: %s\n", checksum)
 		}
+	} else {
+		// Calculate checksum only if not already done
+		checksum, _ = CalculateChecksum(archivePath)
 	}
 
 	// Get file size
 	size, _ := GetFileSize(archivePath)
 
 	// Save archive record
-	checksum, _ := CalculateChecksum(archivePath)
 	record := &database.BackupRecord{
 		VolumeName:  volumeName,
 		ServiceName: serviceName,

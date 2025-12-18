@@ -39,7 +39,10 @@ func (c *Context) List(opts ListOptions) error {
 		// Filter by project if compose is loaded and not --all
 		if !opts.All && c.Compose != nil {
 			// Check if volume belongs to this project
-			if c.ProjectName != "" && vol.Name[:len(c.ProjectName)] != c.ProjectName {
+			if c.ProjectName != "" && len(vol.Name) >= len(c.ProjectName) && vol.Name[:len(c.ProjectName)] != c.ProjectName {
+				continue
+			} else if c.ProjectName != "" && len(vol.Name) < len(c.ProjectName) {
+				// Volume name is shorter than project name, skip it
 				continue
 			}
 		}

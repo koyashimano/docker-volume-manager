@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"path/filepath"
+	"time"
 
 	"github.com/koyashimano/docker-volume-manager/internal/database"
 )
@@ -40,7 +41,7 @@ func (c *Context) Clean(opts CleanOptions) error {
 		if opts.Stale > 0 {
 			meta, _ := c.DB.GetVolumeMetadata(vol.Name)
 			if meta != nil && !meta.LastAccessed.IsZero() {
-				daysSince := int(meta.LastAccessed.Sub(meta.LastAccessed).Hours() / 24)
+				daysSince := int(time.Since(meta.LastAccessed).Hours() / 24)
 				if daysSince >= opts.Stale {
 					shouldClean = true
 				}

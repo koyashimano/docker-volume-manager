@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"path/filepath"
+
 	"github.com/koyashimano/docker-volume-manager/internal/compose"
 	"github.com/koyashimano/docker-volume-manager/internal/config"
 	"github.com/koyashimano/docker-volume-manager/internal/database"
@@ -26,7 +28,7 @@ func NewContext(cfg *config.Config, verbose, quiet bool) (*Context, error) {
 	}
 
 	configPath := config.GetConfigPath()
-	dbPath := configPath[:len(configPath)-len("config.yaml")] + "meta.db"
+	dbPath := filepath.Join(filepath.Dir(configPath), "meta.db")
 	db, err := database.NewDB(dbPath)
 	if err != nil {
 		dockerClient.Close()

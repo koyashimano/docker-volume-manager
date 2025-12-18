@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/koyashimano/docker-volume-manager/internal/database"
 )
@@ -120,7 +121,7 @@ func (c *Context) Swap(opts SwapOptions) error {
 		}
 
 		for _, containerName := range containers {
-			containerName = containerName[1:] // Remove leading slash
+			containerName = strings.TrimPrefix(containerName, "/")
 			if c.Verbose {
 				fmt.Printf("Starting %s\n", containerName)
 			}

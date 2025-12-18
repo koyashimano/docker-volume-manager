@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"strings"
 )
 
 // CloneOptions contains options for clone command
@@ -30,8 +31,9 @@ func (c *Context) Clone(opts CloneOptions) error {
 	targetVolume := opts.NewName
 	if c.ProjectName != "" {
 		// Add project prefix if it doesn't have one
-		if targetVolume[:len(c.ProjectName)] != c.ProjectName+"_" {
-			targetVolume = c.ProjectName + "_" + targetVolume
+		prefix := c.ProjectName + "_"
+		if !strings.HasPrefix(targetVolume, prefix) {
+			targetVolume = prefix + targetVolume
 		}
 	}
 

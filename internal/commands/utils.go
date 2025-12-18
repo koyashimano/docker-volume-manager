@@ -77,7 +77,11 @@ func CalculateChecksum(path string) (string, error) {
 func Confirm(prompt string) bool {
 	fmt.Printf("%s [y/N]: ", prompt)
 	var response string
-	fmt.Scanln(&response)
+	if _, err := fmt.Scanln(&response); err != nil {
+		// If there's an error reading input (EOF, I/O error), default to "no"
+		fmt.Fprintln(os.Stderr, "\nFailed to read input, defaulting to 'no'")
+		return false
+	}
 	response = strings.ToLower(strings.TrimSpace(response))
 	return response == "y" || response == "yes"
 }
