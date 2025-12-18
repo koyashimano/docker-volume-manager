@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -76,6 +77,7 @@ func (c *Context) Swap(opts SwapOptions) error {
 
 	// Stop containers using the volume
 	containers, _ := c.Docker.GetContainersUsingVolume(volumeName)
+	containersStopped := false
 	if len(containers) > 0 {
 		if !c.Quiet {
 			fmt.Printf("Stopping containers: %v\n", containers)
@@ -83,6 +85,20 @@ func (c *Context) Swap(opts SwapOptions) error {
 		if err := c.Docker.StopContainersUsingVolume(volumeName); err != nil {
 			return fmt.Errorf("failed to stop containers: %w", err)
 		}
+		containersStopped = true
+	}
+
+	// Helper function to restart containers on error
+	restartOnError := func(err error) error {
+		if containersStopped && len(containers) > 0 {
+			if !c.Quiet {
+				fmt.Fprintf(os.Stderr, "Error occurred, restarting containers...\n")
+			}
+			if restartErr := c.Docker.RestartContainersUsingVolume(volumeName); restartErr != nil {
+				return fmt.Errorf("%w (also failed to restart containers: %v)", err, restartErr)
+			}
+		}
+		return err
 	}
 
 	// Delete current volume
@@ -91,7 +107,7 @@ func (c *Context) Swap(opts SwapOptions) error {
 	}
 
 	if err := c.Docker.RemoveVolume(volumeName, true); err != nil {
-		return fmt.Errorf("failed to remove volume: %w", err)
+		return restartOnError(fmt.Errorf("failed to remove volume: %w", err))
 	}
 
 	// Create new volume
@@ -100,7 +116,7 @@ func (c *Context) Swap(opts SwapOptions) error {
 	}
 
 	if err := c.Docker.CreateVolume(volumeName); err != nil {
-		return fmt.Errorf("failed to create volume: %w", err)
+		return restartOnError(fmt.Errorf("failed to create volume: %w", err))
 	}
 
 	// Restore from source if provided
@@ -110,7 +126,7 @@ func (c *Context) Swap(opts SwapOptions) error {
 		}
 
 		if err := c.Docker.RestoreVolume(volumeName, opts.Source); err != nil {
-			return fmt.Errorf("restore failed: %w", err)
+			return restartOnError(fmt.Errorf("restore failed: %w", err))
 		}
 	}
 

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -111,6 +112,8 @@ func expandPath(path string) string {
 	if len(path) > 0 && path[0] == '~' {
 		home, err := os.UserHomeDir()
 		if err != nil {
+			// Log the error to stderr for debugging
+			fmt.Fprintf(os.Stderr, "Warning: failed to expand path %q: %v\n", path, err)
 			return path
 		}
 		if path == "~" {

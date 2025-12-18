@@ -22,6 +22,9 @@ import (
 const (
 	// DefaultContainerTimeout is the default timeout for container operations
 	DefaultContainerTimeout = 10
+	// AlpineImage is the image used for volume operations
+	// Pinned to a specific version for consistency
+	AlpineImage = "alpine:3.19"
 )
 
 // Client wraps Docker client
@@ -173,7 +176,9 @@ func (c *Client) GetContainersUsingVolume(volumeName string) ([]string, error) {
 		for _, mnt := range cont.Mounts {
 			if mnt.Name == volumeName {
 				if len(cont.Names) > 0 {
-					result = append(result, cont.Names[0])
+					// Remove leading "/" from container name
+					containerName := strings.TrimPrefix(cont.Names[0], "/")
+					result = append(result, containerName)
 				}
 				break
 			}
@@ -210,9 +215,16 @@ func (c *Client) BackupVolume(volumeName, outputPath string, compress bool) erro
 		return err
 	}
 
+	// Verify directory is writable
+	testFile := filepath.Join(outputDir, ".write_test")
+	if err := os.WriteFile(testFile, []byte{}, 0644); err != nil {
+		return fmt.Errorf("output directory is not writable: %w", err)
+	}
+	os.Remove(testFile)
+
 	// Run a temporary container to create the backup
 	resp, err := c.cli.ContainerCreate(c.ctx, &container.Config{
-		Image: "alpine:latest",
+		Image: AlpineImage,
 		Cmd:   []string{"tar", "c" + tarCompressionOption + "f", "/backup/data.tar.gz", "-C", "/source", "."},
 	}, &container.HostConfig{
 		Mounts: []mount.Mount{
@@ -305,7 +317,7 @@ func (c *Client) RestoreVolume(volumeName, backupPath string) error {
 
 	// Run a temporary container to restore the backup
 	resp, err := c.cli.ContainerCreate(c.ctx, &container.Config{
-		Image: "alpine:latest",
+		Image: AlpineImage,
 		Cmd:   []string{"tar", tarFlags, "/backup/" + backupFile, "-C", "/target"},
 	}, &container.HostConfig{
 		Mounts: []mount.Mount{
@@ -374,7 +386,7 @@ func (c *Client) CopyVolume(sourceVolume, targetVolume string) error {
 
 	// Run a temporary container to copy data
 	resp, err := c.cli.ContainerCreate(c.ctx, &container.Config{
-		Image: "alpine:latest",
+		Image: AlpineImage,
 		Cmd:   []string{"sh", "-c", "cp -a /source/. /target/"},
 	}, &container.HostConfig{
 		Mounts: []mount.Mount{

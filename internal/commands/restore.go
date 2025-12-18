@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 // RestoreOptions contains options for restore command
@@ -97,28 +98,34 @@ func (c *Context) restoreService(serviceName string, opts RestoreOptions) error 
 func (c *Context) restoreFromFile(backupFile, volumeName string, opts RestoreOptions) error {
 	// If volume name not specified, try to infer from backup filename
 	if volumeName == "" {
+		// Parse the filename to extract service name
+		// Format: servicename_timestamp.tar.gz
+		// To handle service names with underscores, we look for a timestamp pattern
 		baseName := filepath.Base(backupFile)
-		// Extract service name from filename (format: servicename_timestamp.tar.gz)
-		parts := []rune(baseName)
-		var serviceName string
-		for i := len(parts) - 1; i >= 0; i-- {
-			if parts[i] == '_' {
-				serviceName = string(parts[:i])
-				break
-			}
+		// Remove extension(s)
+		baseName = strings.TrimSuffix(baseName, filepath.Ext(baseName))
+		if strings.HasSuffix(baseName, ".tar") {
+			baseName = strings.TrimSuffix(baseName, ".tar")
 		}
 
-		if serviceName != "" {
-			var err error
-			volumeName, err = c.ResolveVolumeName(serviceName)
-			if err != nil {
-				volumeName = c.ProjectName + "_" + serviceName
+		// Try to find the last underscore followed by a timestamp (YYYYMMDD_HHMMSS format)
+		parts := strings.Split(baseName, "_")
+		if len(parts) >= 3 {
+			// Join all parts except the last two (which should be date and time)
+			// This assumes format: service_name_20060102_150405
+			serviceName := strings.Join(parts[:len(parts)-2], "_")
+			if serviceName != "" {
+				var err error
+				volumeName, err = c.ResolveVolumeName(serviceName)
+				if err != nil {
+					volumeName = c.ProjectName + "_" + serviceName
+				}
 			}
 		}
 	}
 
 	if volumeName == "" {
-		return fmt.Errorf("cannot determine volume name")
+		return fmt.Errorf("cannot determine volume name from backup file")
 	}
 
 	// Check if volume exists and is in use

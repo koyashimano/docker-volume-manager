@@ -19,8 +19,8 @@ type ComposeFile struct {
 
 // Service represents a service in compose file
 type Service struct {
-	Image   string   `yaml:"image,omitempty"`
-	Volumes []string `yaml:"volumes,omitempty"`
+	Image   string        `yaml:"image,omitempty"`
+	Volumes []interface{} `yaml:"volumes,omitempty"`
 }
 
 // VolumeMapping represents a parsed volume mapping
@@ -99,19 +99,56 @@ func (cf *ComposeFile) GetVolumeMapping(serviceName string) ([]VolumeMapping, er
 	}
 
 	var mappings []VolumeMapping
-	for _, vol := range service.Volumes {
-		parts := strings.Split(vol, ":")
-		if len(parts) < 2 {
-			continue
-		}
+	for _, volSpec := range service.Volumes {
+		switch v := volSpec.(type) {
+		case string:
+			// Short-form syntax: "volume_name:/path" or "./host/path:/container/path"
+			parts := strings.Split(v, ":")
+			if len(parts) < 2 {
+				continue
+			}
 
-		// Only named volumes (not bind mounts)
-		if !strings.HasPrefix(parts[0], "/") && !strings.HasPrefix(parts[0], ".") {
-			mappings = append(mappings, VolumeMapping{
-				VolumeName: parts[0],
-				MountPath:  parts[1],
-				Service:    serviceName,
-			})
+			source := parts[0]
+			target := parts[1]
+
+			// Only named volumes (not bind mounts)
+			if !strings.HasPrefix(source, "/") && !strings.HasPrefix(source, ".") && !strings.HasPrefix(source, "~") {
+				mappings = append(mappings, VolumeMapping{
+					VolumeName: source,
+					MountPath:  target,
+					Service:    serviceName,
+				})
+			}
+
+		case map[string]interface{}:
+			// Long-form syntax: {type: volume, source: name, target: /path, ...}
+			srcVal, okSrc := v["source"]
+			tgtVal, okTgt := v["target"]
+			if !okSrc || !okTgt {
+				continue
+			}
+
+			source, okSourceStr := srcVal.(string)
+			target, okTargetStr := tgtVal.(string)
+			if !okSourceStr || !okTargetStr || source == "" || target == "" {
+				continue
+			}
+
+			// Check if type is explicitly set to something other than "volume"
+			if typeVal, okType := v["type"]; okType {
+				if typeStr, okTypeStr := typeVal.(string); okTypeStr && typeStr != "volume" {
+					continue
+				}
+			}
+
+			// Only named volumes (not bind mounts)
+			if !strings.HasPrefix(source, "/") && !strings.HasPrefix(source, ".") && !strings.HasPrefix(source, "~") {
+				mappings = append(mappings, VolumeMapping{
+					VolumeName: source,
+					MountPath:  target,
+					Service:    serviceName,
+				})
+			}
 		}
 	}
 

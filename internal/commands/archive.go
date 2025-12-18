@@ -88,9 +88,14 @@ func (c *Context) archiveVolume(volumeName, outputDir string, opts ArchiveOption
 
 	// Check if in use
 	inUse, _ := c.Docker.IsVolumeInUse(volumeName)
-	if inUse {
+	if inUse && !opts.Force {
 		containers, _ := c.Docker.GetContainersUsingVolume(volumeName)
-		return fmt.Errorf("volume is in use by: %v", containers)
+		return fmt.Errorf("volume is in use by: %v (use --force to archive anyway)", containers)
+	}
+
+	// Warn if force is being used on an in-use volume
+	if inUse && opts.Force && !c.Quiet {
+		fmt.Printf("Warning: volume %s is in use, but proceeding due to --force option\n", volumeName)
 	}
 
 	// Get service name

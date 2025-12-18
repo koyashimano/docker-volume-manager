@@ -60,7 +60,7 @@ func (c *Context) Clone(opts CloneOptions) error {
 
 	// Update metadata
 	if err := c.DB.UpdateLastAccessed(targetVolume); err != nil {
-		fmt.Printf("Warning: failed to update metadata: %v\n", err)
+		return fmt.Errorf("clone completed but failed to update metadata for %s: %w", targetVolume, err)
 	}
 
 	if !c.Quiet {
