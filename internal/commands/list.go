@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"text/tabwriter"
 	"time"
 )
@@ -37,12 +38,11 @@ func (c *Context) List(opts ListOptions) error {
 
 	for _, vol := range volumes {
 		// Filter by project if compose is loaded and not --all
-		if !opts.All && c.Compose != nil {
+		if !opts.All && c.Compose != nil && c.ProjectName != "" {
 			// Check if volume belongs to this project
-			if c.ProjectName != "" && len(vol.Name) >= len(c.ProjectName) && vol.Name[:len(c.ProjectName)] != c.ProjectName {
-				continue
-			} else if c.ProjectName != "" && len(vol.Name) < len(c.ProjectName) {
-				// Volume name is shorter than project name, skip it
+			// Volume should start with "projectname_"
+			prefix := c.ProjectName + "_"
+			if !strings.HasPrefix(vol.Name, prefix) {
 				continue
 			}
 		}

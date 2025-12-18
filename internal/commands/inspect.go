@@ -53,50 +53,44 @@ func (c *Context) Inspect(opts InspectOptions) error {
 	}
 }
 
-func (c *Context) inspectTable(vol interface{}, meta interface{}, inUse bool, containers []string) error {
-	volData, _ := vol.(*volume.Volume)
-	metaData, _ := meta.(*database.VolumeMetadata)
-
-	fmt.Printf("Volume: %s\n", volData.Name)
-	fmt.Printf("Driver: %s\n", volData.Driver)
-	fmt.Printf("Mountpoint: %s\n", volData.Mountpoint)
-	fmt.Printf("Created: %s\n", volData.CreatedAt)
+func (c *Context) inspectTable(vol *volume.Volume, meta *database.VolumeMetadata, inUse bool, containers []string) error {
+	fmt.Printf("Volume: %s\n", vol.Name)
+	fmt.Printf("Driver: %s\n", vol.Driver)
+	fmt.Printf("Mountpoint: %s\n", vol.Mountpoint)
+	fmt.Printf("Created: %s\n", vol.CreatedAt)
 	fmt.Printf("Status: %s\n", map[bool]string{true: "in-use", false: "unused"}[inUse])
 
 	if len(containers) > 0 {
 		fmt.Printf("Used by: %v\n", containers)
 	}
 
-	if metaData != nil {
-		if !metaData.LastAccessed.IsZero() {
-			fmt.Printf("Last accessed: %s\n", FormatTimestamp(metaData.LastAccessed))
+	if meta != nil {
+		if !meta.LastAccessed.IsZero() {
+			fmt.Printf("Last accessed: %s\n", FormatTimestamp(meta.LastAccessed))
 		}
-		if !metaData.LastBackup.IsZero() {
-			fmt.Printf("Last backup: %s\n", FormatTimestamp(metaData.LastBackup))
+		if !meta.LastBackup.IsZero() {
+			fmt.Printf("Last backup: %s\n", FormatTimestamp(meta.LastBackup))
 		}
-		fmt.Printf("Backup count: %d\n", metaData.BackupCount)
+		fmt.Printf("Backup count: %d\n", meta.BackupCount)
 	}
 
 	return nil
 }
 
-func (c *Context) inspectJSON(vol interface{}, meta interface{}, inUse bool, containers []string) error {
-	volData, _ := vol.(*volume.Volume)
-	metaData, _ := meta.(*database.VolumeMetadata)
-
+func (c *Context) inspectJSON(vol *volume.Volume, meta *database.VolumeMetadata, inUse bool, containers []string) error {
 	data := map[string]interface{}{
-		"name":       volData.Name,
-		"driver":     volData.Driver,
-		"mountpoint": volData.Mountpoint,
-		"created":    volData.CreatedAt,
+		"name":       vol.Name,
+		"driver":     vol.Driver,
+		"mountpoint": vol.Mountpoint,
+		"created":    vol.CreatedAt,
 		"in_use":     inUse,
 		"containers": containers,
 	}
 
-	if metaData != nil {
-		data["last_accessed"] = metaData.LastAccessed
-		data["last_backup"] = metaData.LastBackup
-		data["backup_count"] = metaData.BackupCount
+	if meta != nil {
+		data["last_accessed"] = meta.LastAccessed
+		data["last_backup"] = meta.LastBackup
+		data["backup_count"] = meta.BackupCount
 	}
 
 	encoder := json.NewEncoder(os.Stdout)
@@ -104,15 +98,12 @@ func (c *Context) inspectJSON(vol interface{}, meta interface{}, inUse bool, con
 	return encoder.Encode(data)
 }
 
-func (c *Context) inspectYAML(vol interface{}, meta interface{}, inUse bool, containers []string) error {
+func (c *Context) inspectYAML(vol *volume.Volume, meta *database.VolumeMetadata, inUse bool, containers []string) error {
 	// Simple YAML output (not using yaml library to avoid import)
-	volData, _ := vol.(*volume.Volume)
-	metaData, _ := meta.(*database.VolumeMetadata)
-
-	fmt.Printf("name: %s\n", volData.Name)
-	fmt.Printf("driver: %s\n", volData.Driver)
-	fmt.Printf("mountpoint: %s\n", volData.Mountpoint)
-	fmt.Printf("created: %s\n", volData.CreatedAt)
+	fmt.Printf("name: %s\n", vol.Name)
+	fmt.Printf("driver: %s\n", vol.Driver)
+	fmt.Printf("mountpoint: %s\n", vol.Mountpoint)
+	fmt.Printf("created: %s\n", vol.CreatedAt)
 	fmt.Printf("in_use: %v\n", inUse)
 
 	if len(containers) > 0 {
@@ -122,14 +113,14 @@ func (c *Context) inspectYAML(vol interface{}, meta interface{}, inUse bool, con
 		}
 	}
 
-	if metaData != nil {
-		if !metaData.LastAccessed.IsZero() {
-			fmt.Printf("last_accessed: %s\n", FormatTimestamp(metaData.LastAccessed))
+	if meta != nil {
+		if !meta.LastAccessed.IsZero() {
+			fmt.Printf("last_accessed: %s\n", FormatTimestamp(meta.LastAccessed))
 		}
-		if !metaData.LastBackup.IsZero() {
-			fmt.Printf("last_backup: %s\n", FormatTimestamp(metaData.LastBackup))
+		if !meta.LastBackup.IsZero() {
+			fmt.Printf("last_backup: %s\n", FormatTimestamp(meta.LastBackup))
 		}
-		fmt.Printf("backup_count: %d\n", metaData.BackupCount)
+		fmt.Printf("backup_count: %d\n", meta.BackupCount)
 	}
 
 	return nil

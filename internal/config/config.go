@@ -113,6 +113,9 @@ func expandPath(path string) string {
 		if err != nil {
 			return path
 		}
+		if path == "~" {
+			return home
+		}
 		return filepath.Join(home, path[1:])
 	}
 	return path

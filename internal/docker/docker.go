@@ -113,7 +113,9 @@ func (c *Client) GetContainersUsingVolume(volumeName string) ([]string, error) {
 	for _, cont := range containers {
 		for _, mnt := range cont.Mounts {
 			if mnt.Name == volumeName {
-				result = append(result, cont.Names[0])
+				if len(cont.Names) > 0 {
+					result = append(result, cont.Names[0])
+				}
 				break
 			}
 		}

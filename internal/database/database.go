@@ -48,6 +48,21 @@ func NewDB(dbPath string) (*DB, error) {
 		return nil, err
 	}
 
+	// Configure connection pool settings suitable for SQLite
+	// SQLite typically benefits from a very small number of open connections
+	conn.SetMaxOpenConns(1)
+	conn.SetMaxIdleConns(1)
+
+	// Configure recommended SQLite pragmas for better concurrency and data integrity
+	if _, err := conn.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	if _, err := conn.Exec("PRAGMA foreign_keys=ON;"); err != nil {
+		conn.Close()
+		return nil, err
+	}
+
 	db := &DB{conn: conn}
 	if err := db.initialize(); err != nil {
 		conn.Close()

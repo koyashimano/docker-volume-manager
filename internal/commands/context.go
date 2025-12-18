@@ -62,7 +62,8 @@ func (c *Context) LoadCompose(composePath, projectOverride string) error {
 	if composePath != "" {
 		cf, err = compose.LoadComposeFile(composePath)
 	} else {
-		path, err := compose.FindComposeFile(".")
+		var path string
+		path, err = compose.FindComposeFile(".")
 		if err != nil {
 			return err
 		}
