@@ -130,12 +130,12 @@ func (c *Context) backupVolume(volumeName, outputDir string, opts BackupOptions)
 	}
 
 	if err := c.DB.AddBackupRecord(record); err != nil {
-		fmt.Printf("Warning: failed to save backup record: %v\n", err)
+		return fmt.Errorf("backup completed but failed to save backup record: %w", err)
 	}
 
 	// Update metadata
 	if err := c.DB.UpdateLastBackup(volumeName); err != nil {
-		fmt.Printf("Warning: failed to update metadata: %v\n", err)
+		return fmt.Errorf("backup completed but failed to update metadata for volume %s: %w", volumeName, err)
 	}
 
 	if !c.Quiet {

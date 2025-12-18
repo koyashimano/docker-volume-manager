@@ -246,7 +246,11 @@ func (c *Client) BackupVolume(volumeName, outputPath string, compress bool) erro
 	}
 
 	// Ensure container cleanup
-	defer c.cli.ContainerRemove(c.ctx, resp.ID, container.RemoveOptions{Force: true})
+	defer func() {
+		if err := c.cli.ContainerRemove(c.ctx, resp.ID, container.RemoveOptions{Force: true}); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to remove temporary container %s: %v\n", resp.ID, err)
+		}
+	}()
 
 	// Start the container
 	if err := c.cli.ContainerStart(c.ctx, resp.ID, container.StartOptions{}); err != nil {
@@ -339,7 +343,11 @@ func (c *Client) RestoreVolume(volumeName, backupPath string) error {
 	}
 
 	// Ensure container cleanup
-	defer c.cli.ContainerRemove(c.ctx, resp.ID, container.RemoveOptions{Force: true})
+	defer func() {
+		if err := c.cli.ContainerRemove(c.ctx, resp.ID, container.RemoveOptions{Force: true}); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to remove temporary container %s: %v\n", resp.ID, err)
+		}
+	}()
 
 	// Start the container
 	if err := c.cli.ContainerStart(c.ctx, resp.ID, container.StartOptions{}); err != nil {
@@ -408,7 +416,11 @@ func (c *Client) CopyVolume(sourceVolume, targetVolume string) error {
 	}
 
 	// Ensure container cleanup
-	defer c.cli.ContainerRemove(c.ctx, resp.ID, container.RemoveOptions{Force: true})
+	defer func() {
+		if err := c.cli.ContainerRemove(c.ctx, resp.ID, container.RemoveOptions{Force: true}); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to remove temporary container %s: %v\n", resp.ID, err)
+		}
+	}()
 
 	if err := c.cli.ContainerStart(c.ctx, resp.ID, container.StartOptions{}); err != nil {
 		return err

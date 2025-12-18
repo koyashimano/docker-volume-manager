@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -48,8 +49,14 @@ func NewDB(dbPath string) (*DB, error) {
 		return nil, err
 	}
 
-	// Configure connection pool settings suitable for SQLite
-	// SQLite typically benefits from a very small number of open connections
+	// Configure connection pool settings suitable for SQLite.
+	// SQLite typically benefits from a very small number of open connections.
+	// Setting both to 1 ensures sequential access and prevents database locking issues.
+	//
+	// Note: This configuration means any concurrent database access will block.
+	// This is acceptable for a CLI tool with primarily sequential operations, but
+	// if concurrent access is needed in the future, consider using a mutex or
+	// increasing MaxOpenConns with proper WAL mode configuration.
 	conn.SetMaxOpenConns(1)
 	conn.SetMaxIdleConns(1)
 
@@ -367,12 +374,30 @@ func (db *DB) CleanupOldBackups(volumeName string, keepGenerations int) ([]*Back
 	// If we have more than keepGenerations, delete the oldest
 	if len(records) > keepGenerations {
 		toDelete := records[keepGenerations:]
+		var deleted []*BackupRecord
+		var errs []error
+
 		for _, record := range toDelete {
 			if err := db.DeleteBackupRecord(record.ID); err != nil {
-				return nil, err
+				errs = append(errs, fmt.Errorf("failed to delete backup record %d (file: %s): %w", record.ID, record.FilePath, err))
+			} else {
+				deleted = append(deleted, record)
 			}
 		}
-		return toDelete, nil
+
+		// Return errors if any occurred
+		if len(errs) > 0 {
+			var errMsg string
+			for i, e := range errs {
+				if i > 0 {
+					errMsg += "; "
+				}
+				errMsg += e.Error()
+			}
+			return deleted, fmt.Errorf("cleanup errors: %s", errMsg)
+		}
+
+		return deleted, nil
 	}
 
 	return nil, nil

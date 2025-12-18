@@ -2,8 +2,30 @@ package commands
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
+
+// volumeNamePattern defines valid characters for Docker volume names
+var volumeNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]*$`)
+
+// validateVolumeName validates that a volume name contains only allowed characters
+func validateVolumeName(name string) error {
+	if name == "" {
+		return fmt.Errorf("volume name cannot be empty")
+	}
+	if len(name) > 255 {
+		return fmt.Errorf("volume name too long (max 255 characters)")
+	}
+	if !volumeNamePattern.MatchString(name) {
+		return fmt.Errorf("volume name %q contains invalid characters (allowed: alphanumeric, underscore, hyphen, period; must start with alphanumeric)", name)
+	}
+	// Prevent path traversal attempts
+	if strings.Contains(name, "..") {
+		return fmt.Errorf("volume name %q contains invalid sequence '..'", name)
+	}
+	return nil
+}
 
 // CloneOptions contains options for clone command
 type CloneOptions struct {
@@ -19,6 +41,11 @@ func (c *Context) Clone(opts CloneOptions) error {
 
 	if opts.NewName == "" {
 		return fmt.Errorf("new name is required")
+	}
+
+	// Validate new name contains only allowed characters
+	if err := validateVolumeName(opts.NewName); err != nil {
+		return err
 	}
 
 	// Resolve source volume name
