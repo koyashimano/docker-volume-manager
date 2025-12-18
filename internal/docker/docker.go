@@ -118,6 +118,31 @@ func (c *Client) Close() error {
 	return c.cli.Close()
 }
 
+// ensureImage ensures the specified image is available locally, pulling it if necessary
+func (c *Client) ensureImage(imageName string) error {
+	// Check if image exists locally
+	_, _, err := c.cli.ImageInspectWithRaw(c.ctx, imageName)
+	if err == nil {
+		// Image exists
+		return nil
+	}
+
+	// Image doesn't exist, pull it
+	reader, err := c.cli.ImagePull(c.ctx, imageName, image.PullOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to pull image %s: %w", imageName, err)
+	}
+	defer reader.Close()
+
+	// Wait for pull to complete by reading all output
+	_, err = io.Copy(io.Discard, reader)
+	if err != nil {
+		return fmt.Errorf("error during image pull: %w", err)
+	}
+
+	return nil
+}
+
 // ListVolumes lists all volumes
 func (c *Client) ListVolumes() ([]*volume.Volume, error) {
 	vols, err := c.cli.VolumeList(c.ctx, volume.ListOptions{})
@@ -203,6 +228,11 @@ func (c *Client) RemoveVolume(name string, force bool) error {
 
 // BackupVolume backs up a volume to a tar.gz file
 func (c *Client) BackupVolume(volumeName, outputPath string, compress bool) error {
+	// Ensure the alpine image is available
+	if err := c.ensureImage(AlpineImage); err != nil {
+		return err
+	}
+
 	// Determine tar compression option
 	tarCompressionOption := ""
 	if compress {
@@ -298,6 +328,11 @@ func (c *Client) BackupVolume(volumeName, outputPath string, compress bool) erro
 
 // RestoreVolume restores a volume from a backup file
 func (c *Client) RestoreVolume(volumeName, backupPath string) error {
+	// Ensure the alpine image is available
+	if err := c.ensureImage(AlpineImage); err != nil {
+		return err
+	}
+
 	// Check if backup file exists
 	if _, err := os.Stat(backupPath); os.IsNotExist(err) {
 		return fmt.Errorf("backup file not found: %s", backupPath)
@@ -388,6 +423,11 @@ func (c *Client) RestoreVolume(volumeName, backupPath string) error {
 
 // CopyVolume copies data from one volume to another
 func (c *Client) CopyVolume(sourceVolume, targetVolume string) error {
+	// Ensure the alpine image is available
+	if err := c.ensureImage(AlpineImage); err != nil {
+		return err
+	}
+
 	// Create target volume if it doesn't exist
 	if !c.VolumeExists(targetVolume) {
 		if err := c.CreateVolume(targetVolume); err != nil {
