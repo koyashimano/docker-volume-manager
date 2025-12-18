@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -70,16 +71,29 @@ func NewClient() (*Client, error) {
 
 // getDockerHostFromContext uses docker CLI to get the current context endpoint
 func getDockerHostFromContext() string {
-	// Try to use docker context inspect to get the endpoint
-	cmd := exec.Command("docker", "context", "inspect", "-f", "{{.Endpoints.docker.Host}}")
+	// Run docker context inspect to get the current context
+	cmd := exec.Command("docker", "context", "inspect")
 	output, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
 
-	host := strings.TrimSpace(string(output))
-	if host != "" && host != "<no value>" {
-		return host
+	// Parse JSON output
+	var contexts []struct {
+		Endpoints map[string]struct {
+			Host string `json:"Host"`
+		} `json:"Endpoints"`
+	}
+
+	if err := json.Unmarshal(output, &contexts); err != nil {
+		return ""
+	}
+
+	// Get the first context (current context)
+	if len(contexts) > 0 {
+		if dockerEndpoint, ok := contexts[0].Endpoints["docker"]; ok {
+			return dockerEndpoint.Host
+		}
 	}
 
 	return ""
