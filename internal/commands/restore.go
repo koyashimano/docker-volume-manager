@@ -99,9 +99,10 @@ func (c *Context) restoreFromFile(backupFile, volumeName string, opts RestoreOpt
 	// If volume name not specified, try to infer from backup filename
 	if volumeName == "" {
 		// Parse the filename to extract service name
-		// Format: servicename_timestamp.tar.gz
+		// Expected format: servicename_YYYYMMDD_HHMMSS.tar.gz
 		// To handle service names with underscores, we look for a timestamp pattern
 		baseName := filepath.Base(backupFile)
+
 		// Remove extension(s)
 		baseName = strings.TrimSuffix(baseName, filepath.Ext(baseName))
 		if strings.HasSuffix(baseName, ".tar") {
@@ -110,22 +111,26 @@ func (c *Context) restoreFromFile(backupFile, volumeName string, opts RestoreOpt
 
 		// Try to find the last underscore followed by a timestamp (YYYYMMDD_HHMMSS format)
 		parts := strings.Split(baseName, "_")
-		if len(parts) >= 3 {
-			// Join all parts except the last two (which should be date and time)
-			// This assumes format: service_name_20060102_150405
-			serviceName := strings.Join(parts[:len(parts)-2], "_")
-			if serviceName != "" {
-				var err error
-				volumeName, err = c.ResolveVolumeName(serviceName)
-				if err != nil {
-					volumeName = c.ProjectName + "_" + serviceName
-				}
-			}
+		if len(parts) < 3 {
+			return fmt.Errorf("backup filename %q does not match expected format (service_YYYYMMDD_HHMMSS.tar.gz). Please specify volume name explicitly with --target", filepath.Base(backupFile))
+		}
+
+		// Join all parts except the last two (which should be date and time)
+		// This assumes format: service_name_20060102_150405
+		serviceName := strings.Join(parts[:len(parts)-2], "_")
+		if serviceName == "" {
+			return fmt.Errorf("could not extract service name from backup filename %q. Please specify volume name explicitly with --target", filepath.Base(backupFile))
+		}
+
+		var err error
+		volumeName, err = c.ResolveVolumeName(serviceName)
+		if err != nil {
+			volumeName = c.ProjectName + "_" + serviceName
 		}
 	}
 
 	if volumeName == "" {
-		return fmt.Errorf("cannot determine volume name from backup file")
+		return fmt.Errorf("cannot determine volume name from backup file. Please specify volume name explicitly with --target")
 	}
 
 	// Check if volume exists and is in use
@@ -224,7 +229,9 @@ func (c *Context) selectBackup(serviceName, backupDir string) (string, error) {
 
 	fmt.Print("\nSelect backup number: ")
 	var choice string
-	fmt.Scanln(&choice)
+	if _, err := fmt.Scanln(&choice); err != nil {
+		return "", fmt.Errorf("failed to read selection: %w", err)
+	}
 
 	idx, err := strconv.Atoi(choice)
 	if err != nil || idx < 1 || idx > len(files) {

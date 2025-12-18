@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -14,7 +16,6 @@ type ListOptions struct {
 	All    bool
 	Unused bool
 	Stale  int
-	Size   bool
 	Format string
 }
 
@@ -22,7 +23,6 @@ type ListOptions struct {
 type VolumeListItem struct {
 	Service    string
 	VolumeName string
-	Size       int64
 	LastUsed   time.Time
 	InUse      bool
 }
@@ -80,16 +80,10 @@ func (c *Context) List(opts ListOptions) error {
 		items = append(items, item)
 	}
 
-	// Sort
-	if opts.Size {
-		sort.Slice(items, func(i, j int) bool {
-			return items[i].Size > items[j].Size
-		})
-	} else {
-		sort.Slice(items, func(i, j int) bool {
-			return items[i].VolumeName < items[j].VolumeName
-		})
-	}
+	// Sort by volume name
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].VolumeName < items[j].VolumeName
+	})
 
 	// Output
 	switch opts.Format {
@@ -132,45 +126,51 @@ func (c *Context) outputTable(items []VolumeListItem) error {
 }
 
 func (c *Context) outputJSON(items []VolumeListItem) error {
-	fmt.Println("[")
+	// Create a slice of map[string]string for JSON output
+	output := make([]map[string]string, len(items))
 	for i, item := range items {
 		status := "unused"
 		if item.InUse {
 			status = "in-use"
 		}
 
-		fmt.Printf("  {\"service\": \"%s\", \"volume\": \"%s\", \"last_used\": \"%s\", \"status\": \"%s\"}",
-			item.Service,
-			item.VolumeName,
-			FormatTimestamp(item.LastUsed),
-			status,
-		)
-
-		if i < len(items)-1 {
-			fmt.Println(",")
-		} else {
-			fmt.Println()
+		output[i] = map[string]string{
+			"service":   item.Service,
+			"volume":    item.VolumeName,
+			"last_used": FormatTimestamp(item.LastUsed),
+			"status":    status,
 		}
 	}
-	fmt.Println("]")
-	return nil
+
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(output)
 }
 
 func (c *Context) outputCSV(items []VolumeListItem) error {
-	fmt.Println("service,volume,last_used,status")
+	w := csv.NewWriter(os.Stdout)
+	defer w.Flush()
 
+	// Write header
+	if err := w.Write([]string{"service", "volume", "last_used", "status"}); err != nil {
+		return err
+	}
+
+	// Write records
 	for _, item := range items {
 		status := "unused"
 		if item.InUse {
 			status = "in-use"
 		}
 
-		fmt.Printf("%s,%s,%s,%s\n",
+		if err := w.Write([]string{
 			item.Service,
 			item.VolumeName,
 			FormatTimestamp(item.LastUsed),
 			status,
-		)
+		}); err != nil {
+			return err
+		}
 	}
 
 	return nil

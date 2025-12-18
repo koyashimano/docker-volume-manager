@@ -107,12 +107,21 @@ func GetConfigPath() string {
 	return filepath.Join(home, ".dvm", "config.yaml")
 }
 
-// expandPath expands ~ to home directory
+// expandPath expands a leading "~" to the current user's home directory.
+//
+// If the home directory cannot be determined (e.g., user home directory unavailable),
+// it logs a warning to stderr and returns the original path unchanged. Callers must
+// be aware that a "~" prefix may remain unexpanded in this fallback case, which could
+// cause file operations to fail with misleading errors later.
+//
+// Returns:
+//   - The expanded path if successful
+//   - The original path unchanged if expansion fails
 func expandPath(path string) string {
 	if len(path) > 0 && path[0] == '~' {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			// Log the error to stderr for debugging
+			// Log the error to stderr for debugging and fall back to the original path
 			fmt.Fprintf(os.Stderr, "Warning: failed to expand path %q: %v\n", path, err)
 			return path
 		}

@@ -157,8 +157,6 @@ func runList(ctx *commands.Context, args []string) error {
 	unused := fs.Bool("unused", false, "Show only unused volumes")
 	unusedShort := fs.Bool("u", false, "Show only unused volumes (shorthand)")
 	stale := fs.Int("stale", 0, "Show volumes not accessed for N days")
-	size := fs.Bool("size", false, "Sort by size")
-	sizeShort := fs.Bool("s", false, "Sort by size (shorthand)")
 	format := fs.String("format", "table", "Output format: table/json/csv")
 
 	fs.Parse(args)
@@ -167,7 +165,6 @@ func runList(ctx *commands.Context, args []string) error {
 		All:    *all || *allShort,
 		Unused: *unused || *unusedShort,
 		Stale:  *stale,
-		Size:   *size || *sizeShort,
 		Format: *format,
 	}
 

@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	// DefaultContainerTimeout is the default timeout for container operations
+	// DefaultContainerTimeout is the default timeout for container operations, in seconds
 	DefaultContainerTimeout = 10
 	// AlpineImage is the image used for volume operations
 	// Pinned to a specific version for consistency
@@ -449,8 +449,6 @@ func (c *Client) StopContainersUsingVolume(volumeName string) error {
 
 	timeout := DefaultContainerTimeout
 	for _, containerName := range containers {
-		// Remove leading slash from container name
-		containerName = strings.TrimPrefix(containerName, "/")
 		if err := c.cli.ContainerStop(c.ctx, containerName, container.StopOptions{Timeout: &timeout}); err != nil {
 			return err
 		}
@@ -468,7 +466,6 @@ func (c *Client) RestartContainersUsingVolume(volumeName string) error {
 
 	timeout := DefaultContainerTimeout
 	for _, containerName := range containers {
-		containerName = strings.TrimPrefix(containerName, "/")
 		if err := c.cli.ContainerRestart(c.ctx, containerName, container.StopOptions{Timeout: &timeout}); err != nil {
 			return err
 		}
@@ -488,6 +485,7 @@ func (c *Client) GetUnusedVolumes() ([]*volume.Volume, error) {
 	for _, vol := range vols {
 		inUse, err := c.IsVolumeInUse(vol.Name)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to check if volume %s is in use: %v\n", vol.Name, err)
 			continue
 		}
 		if !inUse {
