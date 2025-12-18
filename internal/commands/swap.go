@@ -72,7 +72,9 @@ func (c *Context) Swap(opts SwapOptions) error {
 			Tag:         "swap-backup",
 			Checksum:    checksum,
 		}
-		c.DB.AddBackupRecord(record)
+		if err := c.DB.AddBackupRecord(record); err != nil && !c.Quiet {
+			fmt.Fprintf(os.Stderr, "Warning: failed to save swap backup record: %v\n", err)
+		}
 	}
 
 	// Stop containers using the volume

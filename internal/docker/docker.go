@@ -222,10 +222,13 @@ func (c *Client) BackupVolume(volumeName, outputPath string, compress bool) erro
 	}
 	os.Remove(testFile)
 
+	// Generate unique temp filename using timestamp and random component
+	tempFilename := fmt.Sprintf(".backup-temp-%d.tar.gz", time.Now().UnixNano())
+
 	// Run a temporary container to create the backup
 	resp, err := c.cli.ContainerCreate(c.ctx, &container.Config{
 		Image: AlpineImage,
-		Cmd:   []string{"tar", "c" + tarCompressionOption + "f", "/backup/data.tar.gz", "-C", "/source", "."},
+		Cmd:   []string{"tar", "c" + tarCompressionOption + "f", filepath.Join("/backup", tempFilename), "-C", "/source", "."},
 	}, &container.HostConfig{
 		Mounts: []mount.Mount{
 			{
@@ -285,7 +288,7 @@ func (c *Client) BackupVolume(volumeName, outputPath string, compress bool) erro
 	}
 
 	// Rename the output file
-	tempPath := filepath.Join(outputDir, "data.tar.gz")
+	tempPath := filepath.Join(outputDir, tempFilename)
 	if err := os.Rename(tempPath, outputPath); err != nil {
 		return err
 	}
@@ -322,7 +325,7 @@ func (c *Client) RestoreVolume(volumeName, backupPath string) error {
 	// Run a temporary container to restore the backup
 	resp, err := c.cli.ContainerCreate(c.ctx, &container.Config{
 		Image: AlpineImage,
-		Cmd:   []string{"tar", tarFlags, "/backup/" + backupFile, "-C", "/target"},
+		Cmd:   []string{"tar", tarFlags, filepath.Join("/backup", backupFile), "-C", "/target"},
 	}, &container.HostConfig{
 		Mounts: []mount.Mount{
 			{
