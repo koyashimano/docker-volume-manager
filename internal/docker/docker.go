@@ -250,7 +250,7 @@ func (c *Client) BackupVolume(volumeName, outputPath string, compress bool) erro
 	if err := os.WriteFile(testFile, []byte{}, 0644); err != nil {
 		return fmt.Errorf("output directory is not writable: %w", err)
 	}
-	os.Remove(testFile)
+	defer os.Remove(testFile)
 
 	// Generate unique temp filename using timestamp and random component
 	tempFilename := fmt.Sprintf(".backup-temp-%d.tar.gz", time.Now().UnixNano())

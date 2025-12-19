@@ -323,9 +323,25 @@ func runHistory(ctx *commands.Context, args []string) error {
 		service = fs.Args()[0]
 	}
 
+	// Determine which limit flag was actually set
+	var (
+		limitSet      bool
+		limitShortSet bool
+	)
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "limit":
+			limitSet = true
+		case "n":
+			limitShortSet = true
+		}
+	})
+
 	lim := *limit
-	if *limitShort != 10 {
+	if limitShortSet {
 		lim = *limitShort
+	} else if limitSet {
+		lim = *limit
 	}
 
 	opts := commands.HistoryOptions{

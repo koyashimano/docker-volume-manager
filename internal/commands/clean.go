@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -139,7 +140,9 @@ func (c *Context) cleanVolume(volumeName, archiveDir string) error {
 			Tag:         "cleanup-archive",
 			Checksum:    checksum,
 		}
-		c.DB.AddBackupRecord(record)
+		if err := c.DB.AddBackupRecord(record); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to save backup record: %v\n", err)
+		}
 	}
 
 	// Delete volume

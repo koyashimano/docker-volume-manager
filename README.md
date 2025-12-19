@@ -41,7 +41,7 @@ make install        # Install to /usr/local/bin
 
 ### Requirements
 
-- Go 1.21 or higher
+- Go (see `go.mod` for the minimum supported version)
 - Docker installed and running
 
 ## Quick Start
