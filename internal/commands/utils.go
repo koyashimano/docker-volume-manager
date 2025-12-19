@@ -86,40 +86,38 @@ func Confirm(prompt string) bool {
 	return response == "y" || response == "yes"
 }
 
-// FindBackupFile finds the latest backup file for a service
-func FindBackupFile(backupDir, serviceName string) (string, error) {
-	pattern := filepath.Join(backupDir, fmt.Sprintf("%s_*.tar.gz", serviceName))
-	matches, err := filepath.Glob(pattern)
-	if err != nil {
-		return "", err
-	}
+// FindBackupFile finds the latest backup file for any of the given names.
+// This supports both service names and full volume names to stay compatible
+// with how backup files are generated.
+func FindBackupFile(backupDir string, names ...string) (string, error) {
+	extensions := []string{".tar.gz", ".tar.zst", ".tar"}
 
-	if len(matches) == 0 {
-		// Try tar.zst
-		pattern = filepath.Join(backupDir, fmt.Sprintf("%s_*.tar.zst", serviceName))
-		matches, err = filepath.Glob(pattern)
-		if err != nil {
-			return "", err
-		}
-	}
-
-	if len(matches) == 0 {
-		return "", ErrBackupNotFound
-	}
-
-	// Return the most recent file
 	var latest string
 	var latestTime time.Time
 
-	for _, match := range matches {
-		info, err := os.Stat(match)
-		if err != nil {
+	for _, name := range names {
+		if name == "" {
 			continue
 		}
 
-		if latest == "" || info.ModTime().After(latestTime) {
-			latest = match
-			latestTime = info.ModTime()
+		for _, ext := range extensions {
+			pattern := filepath.Join(backupDir, fmt.Sprintf("%s_*%s", name, ext))
+			matches, err := filepath.Glob(pattern)
+			if err != nil {
+				return "", err
+			}
+
+			for _, match := range matches {
+				info, err := os.Stat(match)
+				if err != nil {
+					continue
+				}
+
+				if latest == "" || info.ModTime().After(latestTime) {
+					latest = match
+					latestTime = info.ModTime()
+				}
+			}
 		}
 	}
 
@@ -130,20 +128,33 @@ func FindBackupFile(backupDir, serviceName string) (string, error) {
 	return latest, nil
 }
 
-// ListBackupFiles lists all backup files for a service
-func ListBackupFiles(backupDir, serviceName string) ([]string, error) {
-	patterns := []string{
-		filepath.Join(backupDir, fmt.Sprintf("%s_*.tar.gz", serviceName)),
-		filepath.Join(backupDir, fmt.Sprintf("%s_*.tar.zst", serviceName)),
-	}
+// ListBackupFiles lists all backup files for any of the given names
+func ListBackupFiles(backupDir string, names ...string) ([]string, error) {
+	extensions := []string{".tar.gz", ".tar.zst", ".tar"}
 
 	var all []string
-	for _, pattern := range patterns {
-		matches, err := filepath.Glob(pattern)
-		if err != nil {
+	seen := make(map[string]bool)
+
+	for _, name := range names {
+		if name == "" {
 			continue
 		}
-		all = append(all, matches...)
+
+		for _, ext := range extensions {
+			pattern := filepath.Join(backupDir, fmt.Sprintf("%s_*%s", name, ext))
+			matches, err := filepath.Glob(pattern)
+			if err != nil {
+				continue
+			}
+
+			for _, match := range matches {
+				if seen[match] {
+					continue
+				}
+				seen[match] = true
+				all = append(all, match)
+			}
+		}
 	}
 
 	return all, nil
