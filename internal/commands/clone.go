@@ -17,6 +17,10 @@ func validateVolumeName(name string) error {
 	if len(name) > 255 {
 		return fmt.Errorf("volume name too long (max 255 characters)")
 	}
+	// Explicitly reject dangerous names
+	if name == "." || name == ".." {
+		return fmt.Errorf("volume name %q is not allowed", name)
+	}
 	if !volumeNamePattern.MatchString(name) {
 		return fmt.Errorf("volume name %q contains invalid characters (allowed: alphanumeric, underscore, hyphen, period; must start with alphanumeric)", name)
 	}

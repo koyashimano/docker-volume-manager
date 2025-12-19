@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/koyashimano/docker-volume-manager/internal/database"
@@ -148,6 +149,14 @@ func (c *Context) backupVolume(volumeName, outputDir string, opts BackupOptions)
 
 	if keepGenerations > 0 {
 		if deleted, err := c.DB.CleanupOldBackups(volumeName, keepGenerations); err == nil && len(deleted) > 0 {
+			// Delete the actual backup files from filesystem
+			for _, record := range deleted {
+				if err := os.Remove(record.FilePath); err != nil {
+					if c.Verbose {
+						fmt.Fprintf(os.Stderr, "Warning: failed to delete backup file %s: %v\n", record.FilePath, err)
+					}
+				}
+			}
 			if c.Verbose {
 				fmt.Printf("Cleaned up %d old backup(s)\n", len(deleted))
 			}

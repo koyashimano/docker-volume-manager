@@ -233,12 +233,6 @@ func (c *Client) BackupVolume(volumeName, outputPath string, compress bool) erro
 		return err
 	}
 
-	// Determine tar compression option
-	tarCompressionOption := ""
-	if compress {
-		tarCompressionOption = "z"
-	}
-
 	// Create output directory if it doesn't exist
 	outputDir := filepath.Dir(outputPath)
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
@@ -255,10 +249,17 @@ func (c *Client) BackupVolume(volumeName, outputPath string, compress bool) erro
 	// Generate unique temp filename using timestamp and random component
 	tempFilename := fmt.Sprintf(".backup-temp-%d.tar.gz", time.Now().UnixNano())
 
+	// Build tar command with explicit flags to avoid ambiguous option concatenation
+	cmd := []string{"tar", "-c"}
+	if compress {
+		cmd = append(cmd, "-z")
+	}
+	cmd = append(cmd, "-f", filepath.Join("/backup", tempFilename), "-C", "/source", ".")
+
 	// Run a temporary container to create the backup
 	resp, err := c.cli.ContainerCreate(c.ctx, &container.Config{
 		Image: AlpineImage,
-		Cmd:   []string{"tar", "c" + tarCompressionOption + "f", filepath.Join("/backup", tempFilename), "-C", "/source", "."},
+		Cmd:   cmd,
 	}, &container.HostConfig{
 		Mounts: []mount.Mount{
 			{
@@ -342,12 +343,9 @@ func (c *Client) RestoreVolume(volumeName, backupPath string) error {
 	backupFile := filepath.Base(backupPath)
 
 	// Detect compression format from file extension
-	tarFlags := "xf"
+	compressed := false
 	if strings.HasSuffix(backupPath, ".tar.gz") || strings.HasSuffix(backupPath, ".tgz") {
-		tarFlags = "xzf"
-	} else if strings.HasSuffix(backupPath, ".tar.zst") {
-		// zstd compression would require zstd tool, use auto-detection
-		tarFlags = "xf"
+		compressed = true
 	}
 
 	// Create volume if it doesn't exist
@@ -357,10 +355,17 @@ func (c *Client) RestoreVolume(volumeName, backupPath string) error {
 		}
 	}
 
+	// Build tar command with explicit flags to avoid ambiguous option concatenation
+	cmd := []string{"tar", "-x"}
+	if compressed {
+		cmd = append(cmd, "-z")
+	}
+	cmd = append(cmd, "-f", filepath.Join("/backup", backupFile), "-C", "/target")
+
 	// Run a temporary container to restore the backup
 	resp, err := c.cli.ContainerCreate(c.ctx, &container.Config{
 		Image: AlpineImage,
-		Cmd:   []string{"tar", tarFlags, filepath.Join("/backup", backupFile), "-C", "/target"},
+		Cmd:   cmd,
 	}, &container.HostConfig{
 		Mounts: []mount.Mount{
 			{
