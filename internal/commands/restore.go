@@ -68,27 +68,58 @@ func (c *Context) restoreService(serviceName string, opts RestoreOptions) error 
 		svcName = serviceName
 	}
 
+	// Build candidate names for lookup (service, full volume, short volume)
+	seen := make(map[string]struct{})
+	var searchNames []string
+	addName := func(name string) {
+		if name == "" {
+			return
+		}
+		if _, ok := seen[name]; ok {
+			return
+		}
+		seen[name] = struct{}{}
+		searchNames = append(searchNames, name)
+	}
+
+	addName(serviceName)
+	addName(svcName)
+	addName(volumeName)
+
+	if c.ProjectName != "" {
+		prefix := c.ProjectName + "_"
+		shortName := strings.TrimPrefix(volumeName, prefix)
+		addName(shortName)
+	}
+
 	// Get backup directory
 	backupDir := filepath.Join(c.Config.Paths.Backups, c.ProjectName)
 
 	// List backups if requested
 	if opts.List {
-		return c.listBackups(svcName, backupDir)
+		return c.listBackups(backupDir, searchNames...)
 	}
 
 	// Select backup
 	var backupFile string
 
 	if opts.Select {
-		backupFile, err = c.selectBackup(svcName, backupDir)
+		backupFile, err = c.selectBackup(backupDir, searchNames...)
 		if err != nil {
 			return err
 		}
 	} else {
 		// Use latest backup
-		backupFile, err = FindBackupFile(backupDir, svcName)
+		backupFile, err = FindBackupFile(backupDir, searchNames...)
 		if err != nil {
-			return fmt.Errorf("no backup found for %s: %w", svcName, err)
+			target := serviceName
+			if target == "" && len(searchNames) > 0 {
+				target = searchNames[0]
+			}
+			if target == "" {
+				target = volumeName
+			}
+			return fmt.Errorf("no backup found for %s: %w", target, err)
 		}
 	}
 
@@ -181,18 +212,23 @@ func (c *Context) restoreFromFile(backupFile, volumeName string, opts RestoreOpt
 	return nil
 }
 
-func (c *Context) listBackups(serviceName, backupDir string) error {
-	files, err := ListBackupFiles(backupDir, serviceName)
+func (c *Context) listBackups(backupDir string, names ...string) error {
+	files, err := ListBackupFiles(backupDir, names...)
 	if err != nil {
 		return err
 	}
 
+	displayName := "volume"
+	if len(names) > 0 && names[0] != "" {
+		displayName = names[0]
+	}
+
 	if len(files) == 0 {
-		fmt.Printf("No backups found for %s\n", serviceName)
+		fmt.Printf("No backups found for %s\n", displayName)
 		return nil
 	}
 
-	fmt.Printf("Available backups for %s:\n", serviceName)
+	fmt.Printf("Available backups for %s:\n", displayName)
 	for i, file := range files {
 		info, _ := os.Stat(file)
 		size := int64(0)
@@ -205,17 +241,22 @@ func (c *Context) listBackups(serviceName, backupDir string) error {
 	return nil
 }
 
-func (c *Context) selectBackup(serviceName, backupDir string) (string, error) {
-	files, err := ListBackupFiles(backupDir, serviceName)
+func (c *Context) selectBackup(backupDir string, names ...string) (string, error) {
+	files, err := ListBackupFiles(backupDir, names...)
 	if err != nil {
 		return "", err
 	}
 
-	if len(files) == 0 {
-		return "", fmt.Errorf("no backups found for %s", serviceName)
+	displayName := "volume"
+	if len(names) > 0 && names[0] != "" {
+		displayName = names[0]
 	}
 
-	fmt.Printf("Available backups for %s:\n", serviceName)
+	if len(files) == 0 {
+		return "", fmt.Errorf("no backups found for %s", displayName)
+	}
+
+	fmt.Printf("Available backups for %s:\n", displayName)
 	for i, file := range files {
 		info, _ := os.Stat(file)
 		size := int64(0)
