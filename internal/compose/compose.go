@@ -30,6 +30,19 @@ type VolumeMapping struct {
 	Service    string
 }
 
+func normalizeProjectName(name string) string {
+	normalized := strings.ToLower(name)
+
+	var b strings.Builder
+	for _, r := range normalized {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+			b.WriteRune(r)
+		}
+	}
+
+	return strings.TrimLeft(b.String(), "-_.")
+}
+
 // FindComposeFile searches for a compose file in the given directory
 func FindComposeFile(dir string) (string, error) {
 	if dir == "" {
@@ -73,17 +86,17 @@ func LoadComposeFile(path string) (*ComposeFile, error) {
 func (cf *ComposeFile) GetProjectName(override string) string {
 	// 1. Command line override
 	if override != "" {
-		return override
+		return normalizeProjectName(override)
 	}
 
 	// 2. name field in compose file
 	if cf.Name != "" {
-		return cf.Name
+		return normalizeProjectName(cf.Name)
 	}
 
 	// 3. COMPOSE_PROJECT_NAME env var
 	if env := os.Getenv("COMPOSE_PROJECT_NAME"); env != "" {
-		return env
+		return normalizeProjectName(env)
 	}
 
 	// 4. Directory name
@@ -93,11 +106,11 @@ func (cf *ComposeFile) GetProjectName(override string) string {
 	// use the actual current working directory name
 	if dir == "." {
 		if cwd, err := os.Getwd(); err == nil {
-			return filepath.Base(cwd)
+			return normalizeProjectName(filepath.Base(cwd))
 		}
 	}
 
-	return filepath.Base(dir)
+	return normalizeProjectName(filepath.Base(dir))
 }
 
 // GetVolumeMapping returns volume mapping for a service
