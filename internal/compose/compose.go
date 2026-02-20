@@ -4,13 +4,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
-var envVarPattern = regexp.MustCompile(`\$\{([^}]+)\}|\$([a-zA-Z_][a-zA-Z0-9_]*)`)
+// isVarNameStart reports whether b can start a variable name (matches [a-zA-Z_]).
+func isVarNameStart(b byte) bool {
+	return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || b == '_'
+}
+
+// isVarNameChar reports whether b can be part of a variable name (matches [a-zA-Z0-9_]).
+func isVarNameChar(b byte) bool {
+	return isVarNameStart(b) || (b >= '0' && b <= '9')
+}
 
 // expandEnvVars expands Docker Compose-style environment variable references.
 // Supported patterns:
@@ -18,39 +25,91 @@ var envVarPattern = regexp.MustCompile(`\$\{([^}]+)\}|\$([a-zA-Z_][a-zA-Z0-9_]*)
 //   - ${VAR:-default} — value of VAR, or default if unset or empty
 //   - ${VAR-default} — value of VAR, or default if unset
 //   - $VAR — value of VAR, empty string if unset
+//   - $$ — literal '$' with no interpolation
 func expandEnvVars(s string) string {
-	return envVarPattern.ReplaceAllStringFunc(s, func(match string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+
+	for i := 0; i < len(s); {
+		ch := s[i]
+
+		if ch != '$' {
+			b.WriteByte(ch)
+			i++
+			continue
+		}
+
+		// "$$" -> literal '$'
+		if i+1 < len(s) && s[i+1] == '$' {
+			b.WriteByte('$')
+			i += 2
+			continue
+		}
+
+		// ${...} form
+		if i+1 < len(s) && s[i+1] == '{' {
+			end := i + 2
+			for end < len(s) && s[end] != '}' {
+				end++
+			}
+			if end >= len(s) {
+				// No closing '}', treat '$' literally.
+				b.WriteByte('$')
+				i++
+				continue
+			}
+
+			inner := s[i+2 : end]
+
+			// ${VAR:-default}
+			if idx := strings.Index(inner, ":-"); idx >= 0 {
+				key := inner[:idx]
+				def := inner[idx+2:]
+				if v := os.Getenv(key); v != "" {
+					b.WriteString(v)
+				} else {
+					b.WriteString(def)
+				}
+				i = end + 1
+				continue
+			}
+
+			// ${VAR-default}
+			if idx := strings.Index(inner, "-"); idx >= 0 {
+				key := inner[:idx]
+				def := inner[idx+1:]
+				if v, ok := os.LookupEnv(key); ok {
+					b.WriteString(v)
+				} else {
+					b.WriteString(def)
+				}
+				i = end + 1
+				continue
+			}
+
+			// ${VAR}
+			b.WriteString(os.Getenv(inner))
+			i = end + 1
+			continue
+		}
+
 		// $VAR form
-		if !strings.HasPrefix(match, "${") {
-			return os.Getenv(match[1:])
-		}
-
-		// ${...} form — strip braces
-		inner := match[2 : len(match)-1]
-
-		// ${VAR:-default}
-		if idx := strings.Index(inner, ":-"); idx >= 0 {
-			key := inner[:idx]
-			def := inner[idx+2:]
-			if v := os.Getenv(key); v != "" {
-				return v
+		if i+1 < len(s) && isVarNameStart(s[i+1]) {
+			j := i + 2
+			for j < len(s) && isVarNameChar(s[j]) {
+				j++
 			}
-			return def
+			b.WriteString(os.Getenv(s[i+1 : j]))
+			i = j
+			continue
 		}
 
-		// ${VAR-default}
-		if idx := strings.Index(inner, "-"); idx >= 0 {
-			key := inner[:idx]
-			def := inner[idx+1:]
-			if v, ok := os.LookupEnv(key); ok {
-				return v
-			}
-			return def
-		}
+		// '$' not followed by a valid variable pattern; treat as literal.
+		b.WriteByte('$')
+		i++
+	}
 
-		// ${VAR}
-		return os.Getenv(inner)
-	})
+	return b.String()
 }
 
 // ComposeFile represents a Docker Compose file

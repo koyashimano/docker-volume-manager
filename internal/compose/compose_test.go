@@ -59,7 +59,7 @@ func TestExpandEnvVars(t *testing.T) {
 	t.Run("bracedVarUnset", func(t *testing.T) {
 		t.Setenv("TEST_VAR", "")
 		os.Unsetenv("TEST_VAR")
-		if got := expandEnvVars("${TEST_UNSET_VAR_12345}"); got != "" {
+		if got := expandEnvVars("${TEST_VAR}"); got != "" {
 			t.Fatalf("expected empty, got %s", got)
 		}
 	})
@@ -106,6 +106,20 @@ func TestExpandEnvVars(t *testing.T) {
 		}
 	})
 
+	t.Run("dollarDollarEscape", func(t *testing.T) {
+		t.Setenv("FOO", "bar")
+		if got := expandEnvVars("$$FOO"); got != "$FOO" {
+			t.Fatalf("expected $FOO, got %s", got)
+		}
+	})
+
+	t.Run("dollarDollarBraceEscape", func(t *testing.T) {
+		t.Setenv("FOO", "bar")
+		if got := expandEnvVars("$${FOO}"); got != "${FOO}" {
+			t.Fatalf("expected ${FOO}, got %s", got)
+		}
+	})
+
 	t.Run("noSubstitution", func(t *testing.T) {
 		if got := expandEnvVars("plain-text"); got != "plain-text" {
 			t.Fatalf("expected plain-text, got %s", got)
@@ -135,7 +149,13 @@ services:
 	}
 
 	t.Run("usesDefault", func(t *testing.T) {
+		prevVal, wasSet := os.LookupEnv("TEST_COMPOSE_NAME")
 		os.Unsetenv("TEST_COMPOSE_NAME")
+		t.Cleanup(func() {
+			if wasSet {
+				os.Setenv("TEST_COMPOSE_NAME", prevVal)
+			}
+		})
 		cf, err := LoadComposeFile(composePath)
 		if err != nil {
 			t.Fatalf("failed to load compose file: %v", err)
