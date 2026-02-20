@@ -4,10 +4,54 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
+
+var envVarPattern = regexp.MustCompile(`\$\{([^}]+)\}|\$([a-zA-Z_][a-zA-Z0-9_]*)`)
+
+// expandEnvVars expands Docker Compose-style environment variable references.
+// Supported patterns:
+//   - ${VAR} — value of VAR, empty string if unset
+//   - ${VAR:-default} — value of VAR, or default if unset or empty
+//   - ${VAR-default} — value of VAR, or default if unset
+//   - $VAR — value of VAR, empty string if unset
+func expandEnvVars(s string) string {
+	return envVarPattern.ReplaceAllStringFunc(s, func(match string) string {
+		// $VAR form
+		if !strings.HasPrefix(match, "${") {
+			return os.Getenv(match[1:])
+		}
+
+		// ${...} form — strip braces
+		inner := match[2 : len(match)-1]
+
+		// ${VAR:-default}
+		if idx := strings.Index(inner, ":-"); idx >= 0 {
+			key := inner[:idx]
+			def := inner[idx+2:]
+			if v := os.Getenv(key); v != "" {
+				return v
+			}
+			return def
+		}
+
+		// ${VAR-default}
+		if idx := strings.Index(inner, "-"); idx >= 0 {
+			key := inner[:idx]
+			def := inner[idx+1:]
+			if v, ok := os.LookupEnv(key); ok {
+				return v
+			}
+			return def
+		}
+
+		// ${VAR}
+		return os.Getenv(inner)
+	})
+}
 
 // ComposeFile represents a Docker Compose file
 type ComposeFile struct {
@@ -73,8 +117,12 @@ func LoadComposeFile(path string) (*ComposeFile, error) {
 		return nil, err
 	}
 
+	// Expand environment variables before YAML parsing so that
+	// constructs like ${VAR:-default} are resolved.
+	expanded := expandEnvVars(string(data))
+
 	var cf ComposeFile
-	if err := yaml.Unmarshal(data, &cf); err != nil {
+	if err := yaml.Unmarshal([]byte(expanded), &cf); err != nil {
 		return nil, err
 	}
 
