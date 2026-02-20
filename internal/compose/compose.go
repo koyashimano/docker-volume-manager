@@ -19,6 +19,19 @@ func isVarNameChar(b byte) bool {
 	return isVarNameStart(b) || (b >= '0' && b <= '9')
 }
 
+// isValidVarName reports whether name is a valid environment variable name ([a-zA-Z_][a-zA-Z0-9_]*).
+func isValidVarName(name string) bool {
+	if len(name) == 0 || !isVarNameStart(name[0]) {
+		return false
+	}
+	for i := 1; i < len(name); i++ {
+		if !isVarNameChar(name[i]) {
+			return false
+		}
+	}
+	return true
+}
+
 // expandEnvVars expands Docker Compose-style environment variable references.
 // Supported patterns:
 //   - ${VAR} — value of VAR, empty string if unset
@@ -64,6 +77,11 @@ func expandEnvVars(s string) string {
 			// ${VAR:-default}
 			if idx := strings.Index(inner, ":-"); idx >= 0 {
 				key := inner[:idx]
+				if !isValidVarName(key) {
+					b.WriteByte('$')
+					i++
+					continue
+				}
 				def := inner[idx+2:]
 				if v := os.Getenv(key); v != "" {
 					b.WriteString(v)
@@ -77,6 +95,11 @@ func expandEnvVars(s string) string {
 			// ${VAR-default}
 			if idx := strings.Index(inner, "-"); idx >= 0 {
 				key := inner[:idx]
+				if !isValidVarName(key) {
+					b.WriteByte('$')
+					i++
+					continue
+				}
 				def := inner[idx+1:]
 				if v, ok := os.LookupEnv(key); ok {
 					b.WriteString(v)
@@ -88,6 +111,11 @@ func expandEnvVars(s string) string {
 			}
 
 			// ${VAR}
+			if !isValidVarName(inner) {
+				b.WriteByte('$')
+				i++
+				continue
+			}
 			b.WriteString(os.Getenv(inner))
 			i = end + 1
 			continue

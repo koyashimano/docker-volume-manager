@@ -41,6 +41,21 @@ func TestGetProjectNameUsesCurrentWorkingDirectory(t *testing.T) {
 	}
 }
 
+// unsetEnv unsets an environment variable and registers a cleanup to restore
+// the previous value when the test finishes.
+func unsetEnv(t *testing.T, key string) {
+	t.Helper()
+	prev, wasSet := os.LookupEnv(key)
+	os.Unsetenv(key)
+	t.Cleanup(func() {
+		if wasSet {
+			os.Setenv(key, prev)
+		} else {
+			os.Unsetenv(key)
+		}
+	})
+}
+
 func TestExpandEnvVars(t *testing.T) {
 	t.Run("simpleVar", func(t *testing.T) {
 		t.Setenv("TEST_VAR", "hello")
@@ -57,15 +72,14 @@ func TestExpandEnvVars(t *testing.T) {
 	})
 
 	t.Run("bracedVarUnset", func(t *testing.T) {
-		t.Setenv("TEST_VAR", "")
-		os.Unsetenv("TEST_VAR")
+		unsetEnv(t, "TEST_VAR")
 		if got := expandEnvVars("${TEST_VAR}"); got != "" {
 			t.Fatalf("expected empty, got %s", got)
 		}
 	})
 
 	t.Run("colonDashDefault_unset", func(t *testing.T) {
-		os.Unsetenv("TEST_UNSET_VAR_12345")
+		unsetEnv(t, "TEST_UNSET_VAR_12345")
 		if got := expandEnvVars("${TEST_UNSET_VAR_12345:-fallback}"); got != "fallback" {
 			t.Fatalf("expected fallback, got %s", got)
 		}
@@ -86,7 +100,7 @@ func TestExpandEnvVars(t *testing.T) {
 	})
 
 	t.Run("dashDefault_unset", func(t *testing.T) {
-		os.Unsetenv("TEST_UNSET_VAR_12345")
+		unsetEnv(t, "TEST_UNSET_VAR_12345")
 		if got := expandEnvVars("${TEST_UNSET_VAR_12345-fallback}"); got != "fallback" {
 			t.Fatalf("expected fallback, got %s", got)
 		}
@@ -132,6 +146,24 @@ func TestExpandEnvVars(t *testing.T) {
 			t.Fatalf("expected prefix-myapp-suffix, got %s", got)
 		}
 	})
+
+	t.Run("invalidVarName_empty", func(t *testing.T) {
+		if got := expandEnvVars("${}"); got != "${}" {
+			t.Fatalf("expected ${}, got %s", got)
+		}
+	})
+
+	t.Run("invalidVarName_digit", func(t *testing.T) {
+		if got := expandEnvVars("${1}"); got != "${1}" {
+			t.Fatalf("expected ${1}, got %s", got)
+		}
+	})
+
+	t.Run("invalidVarName_dashDefault", func(t *testing.T) {
+		if got := expandEnvVars("${-default}"); got != "${-default}" {
+			t.Fatalf("expected ${-default}, got %s", got)
+		}
+	})
 }
 
 func TestLoadComposeFileExpandsEnvVars(t *testing.T) {
@@ -149,13 +181,7 @@ services:
 	}
 
 	t.Run("usesDefault", func(t *testing.T) {
-		prevVal, wasSet := os.LookupEnv("TEST_COMPOSE_NAME")
-		os.Unsetenv("TEST_COMPOSE_NAME")
-		t.Cleanup(func() {
-			if wasSet {
-				os.Setenv("TEST_COMPOSE_NAME", prevVal)
-			}
-		})
+		unsetEnv(t, "TEST_COMPOSE_NAME")
 		cf, err := LoadComposeFile(composePath)
 		if err != nil {
 			t.Fatalf("failed to load compose file: %v", err)
