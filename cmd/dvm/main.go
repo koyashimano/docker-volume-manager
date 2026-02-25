@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/koyashimano/docker-volume-manager/internal/commands"
 	"github.com/koyashimano/docker-volume-manager/internal/config"
@@ -159,6 +161,7 @@ func runList(ctx *commands.Context, args []string) error {
 	stale := fs.Int("stale", 0, "Show volumes not accessed for N days")
 	format := fs.String("format", "table", "Output format: table/json/csv")
 
+	setSubcommandUsage(fs)
 	fs.Parse(args)
 
 	if len(fs.Args()) > 0 {
@@ -185,6 +188,7 @@ func runBackup(ctx *commands.Context, args []string) error {
 	tagShort := fs.String("t", "", "Tag for backup (shorthand)")
 	stop := fs.Bool("stop", false, "Stop containers before backup")
 
+	setSubcommandUsage(fs)
 	fs.Parse(args)
 
 	outDir := *output
@@ -218,6 +222,7 @@ func runRestore(ctx *commands.Context, args []string) error {
 	force := fs.Bool("force", false, "Force without confirmation")
 	restart := fs.Bool("restart", false, "Restart containers after restore")
 
+	setSubcommandUsage(fs)
 	fs.Parse(args)
 
 	target := ""
@@ -246,6 +251,7 @@ func runArchive(ctx *commands.Context, args []string) error {
 	verify := fs.Bool("verify", false, "Verify integrity before delete")
 	force := fs.Bool("force", false, "Force without confirmation")
 
+	setSubcommandUsage(fs)
 	fs.Parse(args)
 
 	outDir := *output
@@ -269,6 +275,7 @@ func runSwap(ctx *commands.Context, args []string) error {
 	noBackup := fs.Bool("no-backup", false, "Don't backup current volume")
 	restart := fs.Bool("restart", false, "Restart containers after swap")
 
+	setSubcommandUsage(fs)
 	fs.Parse(args)
 
 	if len(fs.Args()) < 1 {
@@ -306,6 +313,7 @@ func runClean(ctx *commands.Context, args []string) error {
 	archiveShort := fs.Bool("a", false, "Archive before cleaning (shorthand)")
 	force := fs.Bool("force", false, "Force without confirmation")
 
+	setSubcommandUsage(fs)
 	fs.Parse(args)
 
 	if len(fs.Args()) > 0 {
@@ -330,6 +338,7 @@ func runHistory(ctx *commands.Context, args []string) error {
 	all := fs.Bool("all", false, "Show all projects")
 	allShort := fs.Bool("a", false, "Show all projects (shorthand)")
 
+	setSubcommandUsage(fs)
 	fs.Parse(args)
 
 	service := ""
@@ -376,6 +385,7 @@ func runInspect(ctx *commands.Context, args []string) error {
 	top := fs.Int("top", 0, "Show top N largest files")
 	format := fs.String("format", "table", "Output format: table/json/yaml")
 
+	setSubcommandUsage(fs)
 	fs.Parse(args)
 
 	if len(fs.Args()) < 1 {
@@ -412,6 +422,74 @@ func runClone(ctx *commands.Context, args []string) error {
 	}
 
 	return ctx.Clone(opts)
+}
+
+// setSubcommandUsage sets a custom usage function that displays flags with -- prefix
+func setSubcommandUsage(fs *flag.FlagSet) {
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage of %s:\n", fs.Name())
+
+		// Map from base usage text to short flag name
+		shortFlags := make(map[string]string)
+		fs.VisitAll(func(f *flag.Flag) {
+			if len(f.Name) == 1 {
+				baseUsage := strings.TrimSuffix(f.Usage, " (shorthand)")
+				shortFlags[baseUsage] = f.Name
+			}
+		})
+
+		// Print long flags paired with their short flags
+		fs.VisitAll(func(f *flag.Flag) {
+			if len(f.Name) == 1 {
+				return
+			}
+
+			short := shortFlags[f.Usage]
+
+			var line string
+			if short != "" {
+				line = fmt.Sprintf("  -%s, --%s", short, f.Name)
+			} else {
+				line = fmt.Sprintf("      --%s", f.Name)
+			}
+
+			// Add type hint for non-bool flags
+			typeName := flagTypeName(f)
+			if typeName != "" {
+				line += " " + typeName
+			}
+
+			// Pad to align descriptions
+			if len(line) < 30 {
+				line += strings.Repeat(" ", 30-len(line))
+			} else {
+				line += "  "
+			}
+
+			line += f.Usage
+
+			// Add default value if non-zero
+			if f.DefValue != "" && f.DefValue != "false" && f.DefValue != "0" {
+				if _, err := strconv.Atoi(f.DefValue); err == nil {
+					line += fmt.Sprintf(" (default %s)", f.DefValue)
+				} else {
+					line += fmt.Sprintf(" (default %q)", f.DefValue)
+				}
+			}
+
+			fmt.Fprintln(os.Stderr, line)
+		})
+	}
+}
+
+func flagTypeName(f *flag.Flag) string {
+	if f.DefValue == "true" || f.DefValue == "false" {
+		return ""
+	}
+	if _, err := strconv.Atoi(f.DefValue); err == nil {
+		return "int"
+	}
+	return "string"
 }
 
 func printUsage() {
