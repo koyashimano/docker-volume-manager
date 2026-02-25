@@ -201,6 +201,68 @@ services:
 			t.Fatalf("expected custom-name, got %s", got)
 		}
 	})
+
+	t.Run("usesDotEnvValue", func(t *testing.T) {
+		unsetEnv(t, "TEST_COMPOSE_NAME")
+		dotEnvPath := filepath.Join(tmp, ".env")
+		if err := os.WriteFile(dotEnvPath, []byte("TEST_COMPOSE_NAME=from-dotenv\n"), 0o644); err != nil {
+			t.Fatalf("failed to write .env file: %v", err)
+		}
+		t.Cleanup(func() { os.Remove(dotEnvPath) })
+
+		cf, err := LoadComposeFile(composePath)
+		if err != nil {
+			t.Fatalf("failed to load compose file: %v", err)
+		}
+		if got := cf.GetProjectName(""); got != "from-dotenv" {
+			t.Fatalf("expected from-dotenv, got %s", got)
+		}
+	})
+
+	t.Run("processEnvTakesPrecedenceOverDotEnv", func(t *testing.T) {
+		t.Setenv("TEST_COMPOSE_NAME", "from-process-env")
+		dotEnvPath := filepath.Join(tmp, ".env")
+		if err := os.WriteFile(dotEnvPath, []byte("TEST_COMPOSE_NAME=from-dotenv\n"), 0o644); err != nil {
+			t.Fatalf("failed to write .env file: %v", err)
+		}
+		t.Cleanup(func() { os.Remove(dotEnvPath) })
+
+		cf, err := LoadComposeFile(composePath)
+		if err != nil {
+			t.Fatalf("failed to load compose file: %v", err)
+		}
+		if got := cf.GetProjectName(""); got != "from-process-env" {
+			t.Fatalf("expected from-process-env, got %s", got)
+		}
+	})
+}
+
+func TestParseDotEnv(t *testing.T) {
+	input := `
+# comment
+KEY1=value1
+KEY2="quoted value"
+KEY3='single quoted'
+INVALID
+=nokey
+KEY4=
+`
+	got := parseDotEnv(input)
+
+	cases := map[string]string{
+		"KEY1": "value1",
+		"KEY2": "quoted value",
+		"KEY3": "single quoted",
+		"KEY4": "",
+	}
+	for k, want := range cases {
+		if v, ok := got[k]; !ok || v != want {
+			t.Errorf("parseDotEnv[%s]: got %q, want %q", k, v, want)
+		}
+	}
+	if _, ok := got["INVALID"]; ok {
+		t.Error("parseDotEnv: expected INVALID to be absent")
+	}
 }
 
 func TestGetProjectNamePriorityAndNormalization(t *testing.T) {

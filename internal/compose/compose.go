@@ -32,14 +32,15 @@ func isValidVarName(name string) bool {
 	return true
 }
 
-// expandEnvVars expands Docker Compose-style environment variable references.
+// expandEnvVarsWithLookup expands Docker Compose-style environment variable
+// references using the provided lookup function.
 // Supported patterns:
 //   - ${VAR} — value of VAR, empty string if unset
 //   - ${VAR:-default} — value of VAR, or default if unset or empty
 //   - ${VAR-default} — value of VAR, or default if unset
 //   - $VAR — value of VAR, empty string if unset
 //   - $$ — literal '$' with no interpolation
-func expandEnvVars(s string) string {
+func expandEnvVarsWithLookup(s string, lookup func(string) (string, bool)) string {
 	var b strings.Builder
 	b.Grow(len(s))
 
@@ -83,7 +84,7 @@ func expandEnvVars(s string) string {
 					continue
 				}
 				def := inner[idx+2:]
-				if v := os.Getenv(key); v != "" {
+				if v, _ := lookup(key); v != "" {
 					b.WriteString(v)
 				} else {
 					b.WriteString(def)
@@ -101,7 +102,7 @@ func expandEnvVars(s string) string {
 					continue
 				}
 				def := inner[idx+1:]
-				if v, ok := os.LookupEnv(key); ok {
+				if v, ok := lookup(key); ok {
 					b.WriteString(v)
 				} else {
 					b.WriteString(def)
@@ -116,7 +117,8 @@ func expandEnvVars(s string) string {
 				i++
 				continue
 			}
-			b.WriteString(os.Getenv(inner))
+			v, _ := lookup(inner)
+			b.WriteString(v)
 			i = end + 1
 			continue
 		}
@@ -127,7 +129,8 @@ func expandEnvVars(s string) string {
 			for j < len(s) && isVarNameChar(s[j]) {
 				j++
 			}
-			b.WriteString(os.Getenv(s[i+1 : j]))
+			v, _ := lookup(s[i+1 : j])
+			b.WriteString(v)
 			i = j
 			continue
 		}
@@ -138,6 +141,41 @@ func expandEnvVars(s string) string {
 	}
 
 	return b.String()
+}
+
+// expandEnvVars expands Docker Compose-style environment variable references
+// using the process environment.
+func expandEnvVars(s string) string {
+	return expandEnvVarsWithLookup(s, os.LookupEnv)
+}
+
+// parseDotEnv parses the contents of a .env file and returns a map of
+// key-value pairs. Lines starting with '#' are treated as comments.
+// Surrounding double or single quotes are stripped from values.
+func parseDotEnv(data string) map[string]string {
+	env := make(map[string]string)
+	for _, line := range strings.Split(data, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		idx := strings.IndexByte(line, '=')
+		if idx < 0 {
+			continue
+		}
+		key := strings.TrimSpace(line[:idx])
+		if !isValidVarName(key) {
+			continue
+		}
+		val := line[idx+1:]
+		if len(val) >= 2 {
+			if (val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'') {
+				val = val[1 : len(val)-1]
+			}
+		}
+		env[key] = val
+	}
+	return env
 }
 
 // ComposeFile represents a Docker Compose file
@@ -197,16 +235,36 @@ func FindComposeFile(dir string) (string, error) {
 	return "", fmt.Errorf("compose file not found in %s", dir)
 }
 
-// LoadComposeFile loads a Docker Compose file
+// LoadComposeFile loads a Docker Compose file.
+// It reads a .env file from the same directory as the compose file and uses
+// its values as fallbacks when expanding environment variable references.
+// Process environment variables take precedence over .env file values.
 func LoadComposeFile(path string) (*ComposeFile, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 
+	// Load .env file from the same directory as the compose file.
+	dotEnv := make(map[string]string)
+	if dotEnvData, err := os.ReadFile(filepath.Join(filepath.Dir(path), ".env")); err == nil {
+		dotEnv = parseDotEnv(string(dotEnvData))
+	}
+
+	// Process environment variables take precedence over .env values.
+	lookup := func(key string) (string, bool) {
+		if v, ok := os.LookupEnv(key); ok {
+			return v, true
+		}
+		if v, ok := dotEnv[key]; ok {
+			return v, true
+		}
+		return "", false
+	}
+
 	// Expand environment variables before YAML parsing so that
 	// constructs like ${VAR:-default} are resolved.
-	expanded := expandEnvVars(string(data))
+	expanded := expandEnvVarsWithLookup(string(data), lookup)
 
 	var cf ComposeFile
 	if err := yaml.Unmarshal([]byte(expanded), &cf); err != nil {
