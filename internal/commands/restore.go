@@ -10,11 +10,12 @@ import (
 
 // RestoreOptions contains options for restore command
 type RestoreOptions struct {
-	Select  bool
-	List    bool
-	Force   bool
-	Restart bool
-	Target  string // service name or backup file path
+	Select     bool
+	List       bool
+	Force      bool
+	Restart    bool
+	Target     string // service name or backup file path
+	BackupFile string // explicit backup file path (when used with service name)
 }
 
 // Restore restores volumes from backup
@@ -22,6 +23,37 @@ func (c *Context) Restore(opts RestoreOptions) error {
 	// If no target specified, restore all volumes in project
 	if opts.Target == "" {
 		return c.restoreAll(opts)
+	}
+
+	// If both service name and backup file are specified
+	if opts.BackupFile != "" {
+		// Reject Select/List options when explicit backup file is specified
+		if opts.Select {
+			return fmt.Errorf("--select cannot be used with an explicit backup file")
+		}
+		if opts.List {
+			return fmt.Errorf("--list cannot be used with an explicit backup file")
+		}
+
+		// Reject if Target looks like a file path (user likely meant single-arg form)
+		if info, err := os.Stat(opts.Target); err == nil && info.Mode().IsRegular() {
+			return fmt.Errorf("%s is a file path, not a service name. Use 'dvm restore <file>' to restore from a single backup file", opts.Target)
+		}
+
+		// Validate that BackupFile exists and is a regular file
+		info, err := os.Stat(opts.BackupFile)
+		if err != nil {
+			return fmt.Errorf("backup file not found: %s", opts.BackupFile)
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("backup path is not a regular file: %s", opts.BackupFile)
+		}
+
+		volumeName, err := c.ResolveVolumeName(opts.Target)
+		if err != nil {
+			volumeName = opts.Target
+		}
+		return c.restoreFromFile(opts.BackupFile, volumeName, opts)
 	}
 
 	// Check if target is a file path
