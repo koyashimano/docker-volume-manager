@@ -27,6 +27,14 @@ func (c *Context) Restore(opts RestoreOptions) error {
 
 	// If both service name and backup file are specified
 	if opts.BackupFile != "" {
+		// Reject Select/List options when explicit backup file is specified
+		if opts.Select {
+			return fmt.Errorf("--select cannot be used with an explicit backup file")
+		}
+		if opts.List {
+			return fmt.Errorf("--list cannot be used with an explicit backup file")
+		}
+
 		// Reject if Target looks like a file path (user likely meant single-arg form)
 		if info, err := os.Stat(opts.Target); err == nil && info.Mode().IsRegular() {
 			return fmt.Errorf("%s is a file path, not a service name. Use 'dvm restore <file>' to restore from a single backup file", opts.Target)
