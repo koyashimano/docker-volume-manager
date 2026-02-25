@@ -27,6 +27,20 @@ func (c *Context) Restore(opts RestoreOptions) error {
 
 	// If both service name and backup file are specified
 	if opts.BackupFile != "" {
+		// Reject if Target looks like a file path (user likely meant single-arg form)
+		if info, err := os.Stat(opts.Target); err == nil && info.Mode().IsRegular() {
+			return fmt.Errorf("%s is a file path, not a service name. Use 'dvm restore <file>' to restore from a single backup file", opts.Target)
+		}
+
+		// Validate that BackupFile exists and is a regular file
+		info, err := os.Stat(opts.BackupFile)
+		if err != nil {
+			return fmt.Errorf("backup file not found: %s", opts.BackupFile)
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("backup path is not a regular file: %s", opts.BackupFile)
+		}
+
 		volumeName, err := c.ResolveVolumeName(opts.Target)
 		if err != nil {
 			volumeName = opts.Target
