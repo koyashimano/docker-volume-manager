@@ -161,6 +161,10 @@ func runList(ctx *commands.Context, args []string) error {
 
 	fs.Parse(args)
 
+	if len(fs.Args()) > 0 {
+		return fmt.Errorf("unexpected arguments: %v", fs.Args())
+	}
+
 	opts := commands.ListOptions{
 		All:    *all || *allShort,
 		Unused: *unused || *unusedShort,
@@ -220,6 +224,9 @@ func runRestore(ctx *commands.Context, args []string) error {
 	if len(fs.Args()) > 0 {
 		target = fs.Args()[0]
 	}
+	if len(fs.Args()) > 1 {
+		return fmt.Errorf("unexpected arguments: %v", fs.Args()[1:])
+	}
 
 	opts := commands.RestoreOptions{
 		Select:  *selectBackup || *selectShort,
@@ -273,6 +280,9 @@ func runSwap(ctx *commands.Context, args []string) error {
 	if len(fs.Args()) > 1 {
 		source = fs.Args()[1]
 	}
+	if len(fs.Args()) > 2 {
+		return fmt.Errorf("unexpected arguments: %v", fs.Args()[2:])
+	}
 
 	opts := commands.SwapOptions{
 		Empty:    *empty,
@@ -298,6 +308,10 @@ func runClean(ctx *commands.Context, args []string) error {
 
 	fs.Parse(args)
 
+	if len(fs.Args()) > 0 {
+		return fmt.Errorf("unexpected arguments: %v", fs.Args())
+	}
+
 	opts := commands.CleanOptions{
 		Unused:  *unused || *unusedShort,
 		Stale:   *stale,
@@ -321,6 +335,9 @@ func runHistory(ctx *commands.Context, args []string) error {
 	service := ""
 	if len(fs.Args()) > 0 {
 		service = fs.Args()[0]
+	}
+	if len(fs.Args()) > 1 {
+		return fmt.Errorf("unexpected arguments: %v", fs.Args()[1:])
 	}
 
 	// Determine which limit flag was actually set
@@ -364,6 +381,9 @@ func runInspect(ctx *commands.Context, args []string) error {
 	if len(fs.Args()) < 1 {
 		return fmt.Errorf("service name required")
 	}
+	if len(fs.Args()) > 1 {
+		return fmt.Errorf("unexpected arguments: %v", fs.Args()[1:])
+	}
 
 	opts := commands.InspectOptions{
 		Files:   *files,
@@ -376,13 +396,19 @@ func runInspect(ctx *commands.Context, args []string) error {
 }
 
 func runClone(ctx *commands.Context, args []string) error {
-	if len(args) < 2 {
+	fs := flag.NewFlagSet("clone", flag.ExitOnError)
+	fs.Parse(args)
+
+	if len(fs.Args()) < 2 {
 		return fmt.Errorf("usage: dvm clone <service> <new-name>")
+	}
+	if len(fs.Args()) > 2 {
+		return fmt.Errorf("unexpected arguments: %v", fs.Args()[2:])
 	}
 
 	opts := commands.CloneOptions{
-		Service: args[0],
-		NewName: args[1],
+		Service: fs.Args()[0],
+		NewName: fs.Args()[1],
 	}
 
 	return ctx.Clone(opts)
