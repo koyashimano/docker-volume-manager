@@ -224,16 +224,21 @@ func runRestore(ctx *commands.Context, args []string) error {
 	if len(fs.Args()) > 0 {
 		target = fs.Args()[0]
 	}
+	backupFile := ""
 	if len(fs.Args()) > 1 {
-		return fmt.Errorf("unexpected arguments: %v", fs.Args()[1:])
+		backupFile = fs.Args()[1]
+	}
+	if len(fs.Args()) > 2 {
+		return fmt.Errorf("unexpected arguments: %v", fs.Args()[2:])
 	}
 
 	opts := commands.RestoreOptions{
-		Select:  *selectBackup || *selectShort,
-		List:    *list || *listShort,
-		Force:   *force,
-		Restart: *restart,
-		Target:  target,
+		Select:     *selectBackup || *selectShort,
+		List:       *list || *listShort,
+		Force:      *force,
+		Restart:    *restart,
+		Target:     target,
+		BackupFile: backupFile,
 	}
 
 	return ctx.Restore(opts)

@@ -117,7 +117,8 @@ dvm restore db             # Restore from latest backup
 dvm restore db --select    # Interactive backup selection
 dvm restore db --list      # List available backups
 dvm restore --restart      # Restart containers after restore
-dvm restore /path/to/backup.tar.gz  # Restore from specific file
+dvm restore db /path/to/backup.tar.gz  # Restore service from specific file
+dvm restore /path/to/backup.tar.gz     # Restore from specific file (infer volume from filename)
 ```
 
 #### `dvm archive` - Archive and delete
