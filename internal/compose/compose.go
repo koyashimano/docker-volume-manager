@@ -234,18 +234,34 @@ func FindComposeFile(dir string) (string, error) {
 
 	if composeFile != "" {
 		// COMPOSE_FILE may contain multiple paths separated by the OS
-		// path list separator. Use the first one.
-		if idx := strings.IndexByte(composeFile, os.PathListSeparator); idx >= 0 {
-			composeFile = composeFile[:idx]
+		// path list separator. Use the first non-empty entry.
+		selected := ""
+		for _, entry := range filepath.SplitList(composeFile) {
+			entry = strings.TrimSpace(entry)
+			if entry != "" {
+				selected = entry
+				break
+			}
 		}
+		if selected == "" {
+			return "", fmt.Errorf("compose file specified by COMPOSE_FILE not found")
+		}
+		composeFile = selected
 
 		// Resolve relative paths against dir.
 		if !filepath.IsAbs(composeFile) {
 			composeFile = filepath.Join(dir, composeFile)
 		}
 
-		if _, err := os.Stat(composeFile); err != nil {
-			return "", fmt.Errorf("compose file specified by COMPOSE_FILE not found: %s", composeFile)
+		info, err := os.Stat(composeFile)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return "", fmt.Errorf("compose file specified by COMPOSE_FILE not found: %s", composeFile)
+			}
+			return "", fmt.Errorf("failed to stat compose file specified by COMPOSE_FILE %q: %w", composeFile, err)
+		}
+		if info.IsDir() {
+			return "", fmt.Errorf("compose file specified by COMPOSE_FILE is a directory: %s", composeFile)
 		}
 		return composeFile, nil
 	}

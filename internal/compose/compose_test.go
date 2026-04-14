@@ -319,6 +319,31 @@ func TestFindComposeFileUsesComposeFileEnv(t *testing.T) {
 		}
 	})
 
+	t.Run("multiplePathsSkipsEmptyFirstEntry", func(t *testing.T) {
+		multi := string(os.PathListSeparator) + customPath
+		t.Setenv("COMPOSE_FILE", multi)
+		got, err := FindComposeFile(tmp)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != customPath {
+			t.Fatalf("expected %s, got %s", customPath, got)
+		}
+	})
+
+	t.Run("directoryPathError", func(t *testing.T) {
+		dirPath := filepath.Join(tmp, "compose-dir")
+		if err := os.Mkdir(dirPath, 0o755); err != nil {
+			t.Fatalf("failed to create directory: %v", err)
+		}
+
+		t.Setenv("COMPOSE_FILE", dirPath)
+		_, err := FindComposeFile(tmp)
+		if err == nil {
+			t.Fatal("expected error for directory COMPOSE_FILE")
+		}
+	})
+
 	t.Run("fileNotFoundError", func(t *testing.T) {
 		t.Setenv("COMPOSE_FILE", filepath.Join(tmp, "nonexistent.yaml"))
 		_, err := FindComposeFile(tmp)
