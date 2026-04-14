@@ -1,12 +1,14 @@
 package docker
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -18,6 +20,7 @@ import (
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 )
 
 const (
@@ -576,6 +579,108 @@ func (c *Client) GetUnusedVolumes() ([]*volume.Volume, error) {
 	}
 
 	return unused, nil
+}
+
+// maxLogSize is the maximum size of log output to read from a container (10MB)
+const maxLogSize = 10 * 1024 * 1024
+
+// ListVolumeContents lists the contents of a volume by running ls in a temporary container
+func (c *Client) ListVolumeContents(volumeName string, relPath string, lsArgs []string) (string, error) {
+	// Validate path to prevent traversal outside the volume
+	// Use path package (not filepath) since the target is a Linux container
+	if path.IsAbs(relPath) {
+		return "", fmt.Errorf("path must be relative: %s", relPath)
+	}
+	cleaned := path.Clean(relPath)
+	if cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return "", fmt.Errorf("path must not escape the volume: %s", relPath)
+	}
+
+	// Ensure the alpine image is available
+	if err := c.ensureImage(AlpineImage); err != nil {
+		return "", err
+	}
+
+	// Build ls command with "--" to prevent path from being interpreted as an option
+	cmd := append([]string{"ls"}, lsArgs...)
+	cmd = append(cmd, "--", path.Join("/volume", cleaned))
+
+	// Run a temporary container to list contents
+	resp, err := c.cli.ContainerCreate(c.ctx, &container.Config{
+		Image: AlpineImage,
+		Cmd:   cmd,
+	}, &container.HostConfig{
+		Mounts: []mount.Mount{
+			{
+				Type:     mount.TypeVolume,
+				Source:   volumeName,
+				Target:   "/volume",
+				ReadOnly: true,
+			},
+		},
+	}, nil, nil, "")
+	if err != nil {
+		return "", err
+	}
+
+	// Ensure container cleanup
+	defer func() {
+		if err := c.cli.ContainerRemove(c.ctx, resp.ID, container.RemoveOptions{Force: true}); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to remove temporary container %s: %v\n", resp.ID, err)
+		}
+	}()
+
+	// Start the container
+	if err := c.cli.ContainerStart(c.ctx, resp.ID, container.StartOptions{}); err != nil {
+		return "", err
+	}
+
+	// Wait for completion
+	statusCh, errCh := c.cli.ContainerWait(c.ctx, resp.ID, container.WaitConditionNotRunning)
+	select {
+	case err := <-errCh:
+		if err != nil {
+			return "", err
+		}
+	case status := <-statusCh:
+		if status.StatusCode != 0 {
+			logs, err := c.cli.ContainerLogs(c.ctx, resp.ID, container.LogsOptions{
+				ShowStdout: true,
+				ShowStderr: true,
+			})
+			if err != nil {
+				return "", fmt.Errorf("ls failed with status %d", status.StatusCode)
+			}
+			defer logs.Close()
+
+			var stderr bytes.Buffer
+			if _, err := stdcopy.StdCopy(io.Discard, &stderr, io.LimitReader(logs, maxLogSize)); err != nil {
+				return "", fmt.Errorf("ls failed with status %d", status.StatusCode)
+			}
+			return "", fmt.Errorf("ls failed: %s", strings.TrimRight(stderr.String(), "\n"))
+		}
+	}
+
+	// Read stdout using Docker's stdcopy to demux multiplexed stream
+	logs, err := c.cli.ContainerLogs(c.ctx, resp.ID, container.LogsOptions{
+		ShowStdout: true,
+	})
+	if err != nil {
+		return "", err
+	}
+	defer logs.Close()
+
+	var stdout bytes.Buffer
+	lr := &io.LimitedReader{R: logs, N: maxLogSize}
+	if _, err := stdcopy.StdCopy(&stdout, io.Discard, lr); err != nil {
+		return "", err
+	}
+
+	if lr.N <= 0 {
+		fmt.Fprintf(os.Stderr, "warning: output exceeded %d bytes and was truncated\n", maxLogSize)
+	}
+
+	return strings.TrimRight(stdout.String(), "\n"), nil
 }
 
 // PruneVolumes removes unused volumes

@@ -135,6 +135,8 @@ func runCommand(ctx *commands.Context, command string, args []string) commands.E
 		err = runInspect(ctx, args)
 	case "clone":
 		err = runClone(ctx, args)
+	case "browse":
+		err = runBrowse(ctx, args)
 	case "help":
 		printUsage()
 		return commands.ExitSuccess
@@ -413,6 +415,42 @@ func runInspect(ctx *commands.Context, args []string) error {
 	return ctx.Inspect(opts)
 }
 
+func runBrowse(ctx *commands.Context, args []string) error {
+	fs := flag.NewFlagSet("browse", flag.ExitOnError)
+	all := fs.Bool("all", false, "Show hidden files")
+	allShort := fs.Bool("a", false, "Show hidden files (shorthand)")
+	long := fs.Bool("long", false, "Show detailed listing")
+	longShort := fs.Bool("l", false, "Show detailed listing (shorthand)")
+	recursive := fs.Bool("recursive", false, "List recursively")
+	recursiveShort := fs.Bool("R", false, "List recursively (shorthand)")
+
+	setSubcommandUsage(fs)
+	fs.Parse(args)
+
+	if len(fs.Args()) < 1 {
+		return fmt.Errorf("service name required")
+	}
+
+	service := fs.Args()[0]
+	path := ""
+	if len(fs.Args()) > 1 {
+		path = fs.Args()[1]
+	}
+	if len(fs.Args()) > 2 {
+		return fmt.Errorf("unexpected arguments: %v", fs.Args()[2:])
+	}
+
+	opts := commands.BrowseOptions{
+		All:       *all || *allShort,
+		Long:      *long || *longShort,
+		Recursive: *recursive || *recursiveShort,
+		Path:      path,
+		Service:   service,
+	}
+
+	return ctx.Browse(opts)
+}
+
 func runClone(ctx *commands.Context, args []string) error {
 	fs := flag.NewFlagSet("clone", flag.ExitOnError)
 	fs.Parse(args)
@@ -526,6 +564,7 @@ Commands:
   history     Show backup history
   inspect     Show detailed volume information
   clone       Clone a volume
+  browse      Browse volume contents
   help        Show help
 
 Examples:
