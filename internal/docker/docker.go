@@ -578,6 +578,107 @@ func (c *Client) GetUnusedVolumes() ([]*volume.Volume, error) {
 	return unused, nil
 }
 
+// ListVolumeContents lists the contents of a volume by running ls in a temporary container
+func (c *Client) ListVolumeContents(volumeName string, path string, lsArgs []string) (string, error) {
+	// Ensure the alpine image is available
+	if err := c.ensureImage(AlpineImage); err != nil {
+		return "", err
+	}
+
+	// Build ls command
+	cmd := append([]string{"ls"}, lsArgs...)
+	cmd = append(cmd, filepath.Join("/volume", path))
+
+	// Run a temporary container to list contents
+	resp, err := c.cli.ContainerCreate(c.ctx, &container.Config{
+		Image: AlpineImage,
+		Cmd:   cmd,
+	}, &container.HostConfig{
+		Mounts: []mount.Mount{
+			{
+				Type:     mount.TypeVolume,
+				Source:   volumeName,
+				Target:   "/volume",
+				ReadOnly: true,
+			},
+		},
+	}, nil, nil, "")
+	if err != nil {
+		return "", err
+	}
+
+	// Ensure container cleanup
+	defer func() {
+		if err := c.cli.ContainerRemove(c.ctx, resp.ID, container.RemoveOptions{Force: true}); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to remove temporary container %s: %v\n", resp.ID, err)
+		}
+	}()
+
+	// Start the container
+	if err := c.cli.ContainerStart(c.ctx, resp.ID, container.StartOptions{}); err != nil {
+		return "", err
+	}
+
+	// Wait for completion
+	statusCh, errCh := c.cli.ContainerWait(c.ctx, resp.ID, container.WaitConditionNotRunning)
+	select {
+	case err := <-errCh:
+		if err != nil {
+			return "", err
+		}
+	case status := <-statusCh:
+		if status.StatusCode != 0 {
+			logs, err := c.cli.ContainerLogs(c.ctx, resp.ID, container.LogsOptions{
+				ShowStdout: true,
+				ShowStderr: true,
+			})
+			if err != nil {
+				return "", fmt.Errorf("ls failed with status %d", status.StatusCode)
+			}
+			defer logs.Close()
+
+			logData, err := io.ReadAll(logs)
+			if err != nil {
+				return "", fmt.Errorf("ls failed with status %d", status.StatusCode)
+			}
+			return "", fmt.Errorf("ls failed: %s", cleanDockerLog(logData))
+		}
+	}
+
+	// Read stdout
+	logs, err := c.cli.ContainerLogs(c.ctx, resp.ID, container.LogsOptions{
+		ShowStdout: true,
+	})
+	if err != nil {
+		return "", err
+	}
+	defer logs.Close()
+
+	logData, err := io.ReadAll(logs)
+	if err != nil {
+		return "", err
+	}
+
+	return cleanDockerLog(logData), nil
+}
+
+// cleanDockerLog removes Docker multiplexed stream headers from log output.
+// Docker log streams have an 8-byte header per frame: [type(1)][0(3)][size(4)].
+func cleanDockerLog(data []byte) string {
+	var result []byte
+	for len(data) >= 8 {
+		// Read the 4-byte big-endian size from header bytes 4-7
+		size := int(data[4])<<24 | int(data[5])<<16 | int(data[6])<<8 | int(data[7])
+		data = data[8:]
+		if size > len(data) {
+			size = len(data)
+		}
+		result = append(result, data[:size]...)
+		data = data[size:]
+	}
+	return strings.TrimRight(string(result), "\n")
+}
+
 // PruneVolumes removes unused volumes
 func (c *Client) PruneVolumes() error {
 	_, err := c.cli.VolumesPrune(c.ctx, filters.Args{})
