@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"bytes"
+
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
@@ -18,6 +20,7 @@ import (
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 )
 
 const (
@@ -578,16 +581,28 @@ func (c *Client) GetUnusedVolumes() ([]*volume.Volume, error) {
 	return unused, nil
 }
 
+// maxLogSize is the maximum size of log output to read from a container (10MB)
+const maxLogSize = 10 * 1024 * 1024
+
 // ListVolumeContents lists the contents of a volume by running ls in a temporary container
 func (c *Client) ListVolumeContents(volumeName string, path string, lsArgs []string) (string, error) {
+	// Validate path to prevent traversal outside the volume
+	if filepath.IsAbs(path) {
+		return "", fmt.Errorf("path must be relative: %s", path)
+	}
+	cleaned := filepath.Clean(path)
+	if cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("path must not escape the volume: %s", path)
+	}
+
 	// Ensure the alpine image is available
 	if err := c.ensureImage(AlpineImage); err != nil {
 		return "", err
 	}
 
-	// Build ls command
+	// Build ls command with "--" to prevent path from being interpreted as an option
 	cmd := append([]string{"ls"}, lsArgs...)
-	cmd = append(cmd, filepath.Join("/volume", path))
+	cmd = append(cmd, "--", filepath.Join("/volume", cleaned))
 
 	// Run a temporary container to list contents
 	resp, err := c.cli.ContainerCreate(c.ctx, &container.Config{
@@ -637,15 +652,15 @@ func (c *Client) ListVolumeContents(volumeName string, path string, lsArgs []str
 			}
 			defer logs.Close()
 
-			logData, err := io.ReadAll(logs)
-			if err != nil {
+			var stderr bytes.Buffer
+			if _, err := stdcopy.StdCopy(io.Discard, &stderr, io.LimitReader(logs, maxLogSize)); err != nil {
 				return "", fmt.Errorf("ls failed with status %d", status.StatusCode)
 			}
-			return "", fmt.Errorf("ls failed: %s", cleanDockerLog(logData))
+			return "", fmt.Errorf("ls failed: %s", strings.TrimRight(stderr.String(), "\n"))
 		}
 	}
 
-	// Read stdout
+	// Read stdout using Docker's stdcopy to demux multiplexed stream
 	logs, err := c.cli.ContainerLogs(c.ctx, resp.ID, container.LogsOptions{
 		ShowStdout: true,
 	})
@@ -654,29 +669,12 @@ func (c *Client) ListVolumeContents(volumeName string, path string, lsArgs []str
 	}
 	defer logs.Close()
 
-	logData, err := io.ReadAll(logs)
-	if err != nil {
+	var stdout bytes.Buffer
+	if _, err := stdcopy.StdCopy(&stdout, io.Discard, io.LimitReader(logs, maxLogSize)); err != nil {
 		return "", err
 	}
 
-	return cleanDockerLog(logData), nil
-}
-
-// cleanDockerLog removes Docker multiplexed stream headers from log output.
-// Docker log streams have an 8-byte header per frame: [type(1)][0(3)][size(4)].
-func cleanDockerLog(data []byte) string {
-	var result []byte
-	for len(data) >= 8 {
-		// Read the 4-byte big-endian size from header bytes 4-7
-		size := int(data[4])<<24 | int(data[5])<<16 | int(data[6])<<8 | int(data[7])
-		data = data[8:]
-		if size > len(data) {
-			size = len(data)
-		}
-		result = append(result, data[:size]...)
-		data = data[size:]
-	}
-	return strings.TrimRight(string(result), "\n")
+	return strings.TrimRight(stdout.String(), "\n"), nil
 }
 
 // PruneVolumes removes unused volumes
