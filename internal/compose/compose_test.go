@@ -237,6 +237,114 @@ services:
 	})
 }
 
+func TestFindComposeFileUsesComposeFileEnv(t *testing.T) {
+	tmp := t.TempDir()
+	customPath := filepath.Join(tmp, "custom-compose.yaml")
+	if err := os.WriteFile(customPath, []byte("services: {}\n"), 0o644); err != nil {
+		t.Fatalf("failed to write compose file: %v", err)
+	}
+
+	t.Run("fromProcessEnv", func(t *testing.T) {
+		t.Setenv("COMPOSE_FILE", customPath)
+		got, err := FindComposeFile(tmp)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != customPath {
+			t.Fatalf("expected %s, got %s", customPath, got)
+		}
+	})
+
+	t.Run("fromProcessEnvRelative", func(t *testing.T) {
+		t.Setenv("COMPOSE_FILE", "custom-compose.yaml")
+		got, err := FindComposeFile(tmp)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := filepath.Join(tmp, "custom-compose.yaml")
+		if got != want {
+			t.Fatalf("expected %s, got %s", want, got)
+		}
+	})
+
+	t.Run("fromDotEnv", func(t *testing.T) {
+		unsetEnv(t, "COMPOSE_FILE")
+		dotEnvPath := filepath.Join(tmp, ".env")
+		if err := os.WriteFile(dotEnvPath, []byte("COMPOSE_FILE=custom-compose.yaml\n"), 0o644); err != nil {
+			t.Fatalf("failed to write .env file: %v", err)
+		}
+		t.Cleanup(func() { os.Remove(dotEnvPath) })
+
+		got, err := FindComposeFile(tmp)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := filepath.Join(tmp, "custom-compose.yaml")
+		if got != want {
+			t.Fatalf("expected %s, got %s", want, got)
+		}
+	})
+
+	t.Run("processEnvTakesPrecedenceOverDotEnv", func(t *testing.T) {
+		otherPath := filepath.Join(tmp, "other-compose.yaml")
+		if err := os.WriteFile(otherPath, []byte("services: {}\n"), 0o644); err != nil {
+			t.Fatalf("failed to write compose file: %v", err)
+		}
+
+		t.Setenv("COMPOSE_FILE", otherPath)
+		dotEnvPath := filepath.Join(tmp, ".env")
+		if err := os.WriteFile(dotEnvPath, []byte("COMPOSE_FILE=custom-compose.yaml\n"), 0o644); err != nil {
+			t.Fatalf("failed to write .env file: %v", err)
+		}
+		t.Cleanup(func() { os.Remove(dotEnvPath) })
+
+		got, err := FindComposeFile(tmp)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != otherPath {
+			t.Fatalf("expected %s, got %s", otherPath, got)
+		}
+	})
+
+	t.Run("multiplePathsUsesFirst", func(t *testing.T) {
+		multi := customPath + string(os.PathListSeparator) + "/nonexistent.yaml"
+		t.Setenv("COMPOSE_FILE", multi)
+		got, err := FindComposeFile(tmp)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != customPath {
+			t.Fatalf("expected %s, got %s", customPath, got)
+		}
+	})
+
+	t.Run("fileNotFoundError", func(t *testing.T) {
+		t.Setenv("COMPOSE_FILE", filepath.Join(tmp, "nonexistent.yaml"))
+		_, err := FindComposeFile(tmp)
+		if err == nil {
+			t.Fatal("expected error for nonexistent COMPOSE_FILE")
+		}
+	})
+
+	t.Run("fallsBackWithoutEnv", func(t *testing.T) {
+		unsetEnv(t, "COMPOSE_FILE")
+		defaultPath := filepath.Join(tmp, "compose.yaml")
+		if err := os.WriteFile(defaultPath, []byte("services: {}\n"), 0o644); err != nil {
+			t.Fatalf("failed to write compose file: %v", err)
+		}
+		t.Cleanup(func() { os.Remove(defaultPath) })
+
+		got, err := FindComposeFile(tmp)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != defaultPath {
+			t.Fatalf("expected %s, got %s", defaultPath, got)
+		}
+	})
+}
+
 func TestParseDotEnv(t *testing.T) {
 	input := `
 # comment

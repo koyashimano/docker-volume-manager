@@ -212,10 +212,42 @@ func normalizeProjectName(name string) string {
 	return strings.TrimLeft(b.String(), "-_.")
 }
 
-// FindComposeFile searches for a compose file in the given directory
+// FindComposeFile searches for a compose file in the given directory.
+// It first checks the COMPOSE_FILE environment variable (from the process
+// environment and then from a .env file in dir). If COMPOSE_FILE is set,
+// its value is used as the compose file path (when multiple paths are
+// separated by the OS path list separator, only the first is used).
+// Otherwise it falls back to the standard file name candidates.
 func FindComposeFile(dir string) (string, error) {
 	if dir == "" {
 		dir = "."
+	}
+
+	// Check COMPOSE_FILE from process environment, then .env file.
+	composeFile := os.Getenv("COMPOSE_FILE")
+	if composeFile == "" {
+		if dotEnvData, err := os.ReadFile(filepath.Join(dir, ".env")); err == nil {
+			dotEnv := parseDotEnv(string(dotEnvData))
+			composeFile = dotEnv["COMPOSE_FILE"]
+		}
+	}
+
+	if composeFile != "" {
+		// COMPOSE_FILE may contain multiple paths separated by the OS
+		// path list separator. Use the first one.
+		if idx := strings.IndexByte(composeFile, os.PathListSeparator); idx >= 0 {
+			composeFile = composeFile[:idx]
+		}
+
+		// Resolve relative paths against dir.
+		if !filepath.IsAbs(composeFile) {
+			composeFile = filepath.Join(dir, composeFile)
+		}
+
+		if _, err := os.Stat(composeFile); err != nil {
+			return "", fmt.Errorf("compose file specified by COMPOSE_FILE not found: %s", composeFile)
+		}
+		return composeFile, nil
 	}
 
 	candidates := []string{
