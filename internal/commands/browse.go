@@ -45,6 +45,11 @@ func (c *Context) Browse(opts BrowseOptions) error {
 		return err
 	}
 
+	// Update last-accessed metadata so clean --stale works correctly
+	if err := c.DB.UpdateLastAccessed(volumeName); err != nil {
+		fmt.Printf("Warning: failed to update metadata: %v\n", err)
+	}
+
 	if output != "" {
 		fmt.Println(output)
 	}

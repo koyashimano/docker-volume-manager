@@ -1,17 +1,17 @@
 package docker
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
-
-	"bytes"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -585,14 +585,15 @@ func (c *Client) GetUnusedVolumes() ([]*volume.Volume, error) {
 const maxLogSize = 10 * 1024 * 1024
 
 // ListVolumeContents lists the contents of a volume by running ls in a temporary container
-func (c *Client) ListVolumeContents(volumeName string, path string, lsArgs []string) (string, error) {
+func (c *Client) ListVolumeContents(volumeName string, relPath string, lsArgs []string) (string, error) {
 	// Validate path to prevent traversal outside the volume
-	if filepath.IsAbs(path) {
-		return "", fmt.Errorf("path must be relative: %s", path)
+	// Use path package (not filepath) since the target is a Linux container
+	if path.IsAbs(relPath) {
+		return "", fmt.Errorf("path must be relative: %s", relPath)
 	}
-	cleaned := filepath.Clean(path)
-	if cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("path must not escape the volume: %s", path)
+	cleaned := path.Clean(relPath)
+	if cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return "", fmt.Errorf("path must not escape the volume: %s", relPath)
 	}
 
 	// Ensure the alpine image is available
@@ -602,7 +603,7 @@ func (c *Client) ListVolumeContents(volumeName string, path string, lsArgs []str
 
 	// Build ls command with "--" to prevent path from being interpreted as an option
 	cmd := append([]string{"ls"}, lsArgs...)
-	cmd = append(cmd, "--", filepath.Join("/volume", cleaned))
+	cmd = append(cmd, "--", path.Join("/volume", cleaned))
 
 	// Run a temporary container to list contents
 	resp, err := c.cli.ContainerCreate(c.ctx, &container.Config{
@@ -670,8 +671,13 @@ func (c *Client) ListVolumeContents(volumeName string, path string, lsArgs []str
 	defer logs.Close()
 
 	var stdout bytes.Buffer
-	if _, err := stdcopy.StdCopy(&stdout, io.Discard, io.LimitReader(logs, maxLogSize)); err != nil {
+	lr := &io.LimitedReader{R: logs, N: maxLogSize}
+	if _, err := stdcopy.StdCopy(&stdout, io.Discard, lr); err != nil {
 		return "", err
+	}
+
+	if lr.N <= 0 {
+		fmt.Fprintf(os.Stderr, "warning: output exceeded %d bytes and was truncated\n", maxLogSize)
 	}
 
 	return strings.TrimRight(stdout.String(), "\n"), nil
