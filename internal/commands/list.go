@@ -17,6 +17,7 @@ type ListOptions struct {
 	Unused bool
 	Stale  int
 	Format string
+	Size   bool
 }
 
 // VolumeListItem represents a volume in the list
@@ -25,6 +26,7 @@ type VolumeListItem struct {
 	VolumeName string
 	LastUsed   time.Time
 	InUse      bool
+	Size       int64 // -1 means unavailable
 }
 
 // List lists volumes
@@ -32,6 +34,14 @@ func (c *Context) List(opts ListOptions) error {
 	volumes, err := c.Docker.ListVolumes()
 	if err != nil {
 		return err
+	}
+
+	var volumeSizes map[string]int64
+	if opts.Size {
+		volumeSizes, err = c.Docker.GetVolumeSizes()
+		if err != nil {
+			return fmt.Errorf("failed to get volume sizes: %w", err)
+		}
 	}
 
 	var items []VolumeListItem
@@ -71,6 +81,13 @@ func (c *Context) List(opts ListOptions) error {
 			Service:    serviceName,
 			VolumeName: vol.Name,
 			InUse:      inUse,
+			Size:       -1,
+		}
+
+		if volumeSizes != nil {
+			if size, ok := volumeSizes[vol.Name]; ok {
+				item.Size = size
+			}
 		}
 
 		if meta != nil {
@@ -88,19 +105,23 @@ func (c *Context) List(opts ListOptions) error {
 	// Output
 	switch opts.Format {
 	case "json":
-		return c.outputJSON(items)
+		return c.outputJSON(items, opts.Size)
 	case "csv":
-		return c.outputCSV(items)
+		return c.outputCSV(items, opts.Size)
 	default:
-		return c.outputTable(items)
+		return c.outputTable(items, opts.Size)
 	}
 }
 
-func (c *Context) outputTable(items []VolumeListItem) error {
+func (c *Context) outputTable(items []VolumeListItem, showSize bool) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	defer w.Flush()
 
-	fmt.Fprintln(w, "SERVICE\tVOLUME\tLAST_USED\tSTATUS")
+	header := "SERVICE\tVOLUME\tLAST_USED\tSTATUS"
+	if showSize {
+		header += "\tSIZE"
+	}
+	fmt.Fprintln(w, header)
 
 	for _, item := range items {
 		service := item.Service
@@ -114,32 +135,48 @@ func (c *Context) outputTable(items []VolumeListItem) error {
 			status = "in-use"
 		}
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+		line := fmt.Sprintf("%s\t%s\t%s\t%s",
 			service,
 			item.VolumeName,
 			lastUsed,
 			status,
 		)
+		if showSize {
+			size := "N/A"
+			if item.Size >= 0 {
+				size = FormatSize(item.Size)
+			}
+			line += fmt.Sprintf("\t%s", size)
+		}
+		fmt.Fprintln(w, line)
 	}
 
 	return nil
 }
 
-func (c *Context) outputJSON(items []VolumeListItem) error {
-	// Create a slice of map[string]string for JSON output
-	output := make([]map[string]string, len(items))
+func (c *Context) outputJSON(items []VolumeListItem, showSize bool) error {
+	// Create a slice of map[string]interface{} for JSON output
+	output := make([]map[string]interface{}, len(items))
 	for i, item := range items {
 		status := "unused"
 		if item.InUse {
 			status = "in-use"
 		}
 
-		output[i] = map[string]string{
+		entry := map[string]interface{}{
 			"service":   item.Service,
 			"volume":    item.VolumeName,
 			"last_used": FormatTimestamp(item.LastUsed),
 			"status":    status,
 		}
+		if showSize {
+			if item.Size >= 0 {
+				entry["size"] = item.Size
+			} else {
+				entry["size"] = nil
+			}
+		}
+		output[i] = entry
 	}
 
 	encoder := json.NewEncoder(os.Stdout)
@@ -147,12 +184,16 @@ func (c *Context) outputJSON(items []VolumeListItem) error {
 	return encoder.Encode(output)
 }
 
-func (c *Context) outputCSV(items []VolumeListItem) error {
+func (c *Context) outputCSV(items []VolumeListItem, showSize bool) error {
 	w := csv.NewWriter(os.Stdout)
 	defer w.Flush()
 
 	// Write header
-	if err := w.Write([]string{"service", "volume", "last_used", "status"}); err != nil {
+	header := []string{"service", "volume", "last_used", "status"}
+	if showSize {
+		header = append(header, "size")
+	}
+	if err := w.Write(header); err != nil {
 		return err
 	}
 
@@ -163,12 +204,20 @@ func (c *Context) outputCSV(items []VolumeListItem) error {
 			status = "in-use"
 		}
 
-		if err := w.Write([]string{
+		record := []string{
 			item.Service,
 			item.VolumeName,
 			FormatTimestamp(item.LastUsed),
 			status,
-		}); err != nil {
+		}
+		if showSize {
+			if item.Size >= 0 {
+				record = append(record, FormatSize(item.Size))
+			} else {
+				record = append(record, "N/A")
+			}
+		}
+		if err := w.Write(record); err != nil {
 			return err
 		}
 	}

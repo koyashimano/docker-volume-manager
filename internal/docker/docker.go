@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
@@ -141,6 +142,27 @@ func (c *Client) ensureImage(imageName string) error {
 	}
 
 	return nil
+}
+
+// GetVolumeSizes returns a map of volume name to size in bytes using the Docker system disk usage API.
+// Volumes with unavailable size (non-local driver) have size -1.
+func (c *Client) GetVolumeSizes() (map[string]int64, error) {
+	du, err := c.cli.DiskUsage(c.ctx, types.DiskUsageOptions{
+		Types: []types.DiskUsageObject{types.VolumeObject},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	sizes := make(map[string]int64, len(du.Volumes))
+	for _, vol := range du.Volumes {
+		if vol.UsageData != nil {
+			sizes[vol.Name] = vol.UsageData.Size
+		} else {
+			sizes[vol.Name] = -1
+		}
+	}
+	return sizes, nil
 }
 
 // ListVolumes lists all volumes

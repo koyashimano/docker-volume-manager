@@ -159,6 +159,8 @@ func runList(ctx *commands.Context, args []string) error {
 	unused := fs.Bool("unused", false, "Show only unused volumes")
 	unusedShort := fs.Bool("u", false, "Show only unused volumes (shorthand)")
 	stale := fs.Int("stale", 0, "Show volumes not accessed for N days")
+	size := fs.Bool("size", false, "Show volume disk usage")
+	sizeShort := fs.Bool("s", false, "Show volume disk usage (shorthand)")
 	format := fs.String("format", "table", "Output format: table/json/csv")
 
 	setSubcommandUsage(fs)
@@ -172,6 +174,7 @@ func runList(ctx *commands.Context, args []string) error {
 		All:    *all || *allShort,
 		Unused: *unused || *unusedShort,
 		Stale:  *stale,
+		Size:   *size || *sizeShort,
 		Format: *format,
 	}
 
